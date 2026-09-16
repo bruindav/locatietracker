@@ -1,4 +1,4 @@
-<!-- Fix: Basis kaart-app met locatie, richtingpijl, wisselbare kaartlagen en lokaal opgeslagen spoor (branch fix-1) -->
+<!-- Fix: Compatibelere CSS (geen 'inset' shorthand) + zichtbare foutmelding bij script-/laadfouten voor diagnose (branch fix-2) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -13,7 +13,13 @@
   }
   html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}
-  #map{position:absolute;inset:0;background:#111;}
+  #map{position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;background:#111;}
+  #errorBanner{
+    position:fixed; top:0; left:0; right:0; z-index:5000; display:none;
+    background:#5a1414; color:#ffdede; padding:12px 14px; font-size:13px;
+    font-family:monospace; white-space:pre-wrap; word-break:break-word;
+    border-bottom:2px solid #ff5c5c; max-height:40vh; overflow:auto;
+  }
   .topbar{
     position:absolute; top:0; left:0; right:0; z-index:1000;
     display:flex; align-items:center; justify-content:space-between;
@@ -79,6 +85,7 @@
 </head>
 <body>
 
+<div id="errorBanner"></div>
 <div id="map"></div>
 
 <div class="topbar">
@@ -100,6 +107,22 @@
 <script>
 (function(){
   "use strict";
+
+  // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
+  function showError(msg){
+    var banner = document.getElementById('errorBanner');
+    if(!banner) return;
+    banner.style.display = 'block';
+    banner.textContent = '⚠ Fout: ' + msg;
+  }
+  window.addEventListener('error', function(e){
+    showError((e && e.message) ? e.message : 'onbekende scriptfout');
+  });
+
+  if(typeof L === 'undefined'){
+    showError('Leaflet (kaartbibliotheek) kon niet geladen worden. Controleer je internetverbinding of een adblocker/DNS-filter dat cdnjs.cloudflare.com blokkeert.');
+    return;
+  }
 
   // ---------- Opslag ----------
   var STORAGE_KEY = "locatietracker.track.v1";
@@ -127,6 +150,8 @@
   var settings = loadSettings();
   var track = loadTrack();
   var isTracking = !!settings.isTracking;
+
+  try{
 
   // ---------- Kaart ----------
   var map = L.map('map', { zoomControl: true, attributionControl: true })
@@ -336,6 +361,10 @@
   });
 
   updateStats();
+
+  }catch(err){
+    showError((err && err.message) ? err.message : String(err));
+  }
 })();
 </script>
 </body>
