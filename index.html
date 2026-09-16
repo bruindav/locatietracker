@@ -1,0 +1,342 @@
+<!-- Fix: Basis kaart-app met locatie, richtingpijl, wisselbare kaartlagen en lokaal opgeslagen spoor (branch fix-1) -->
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Locatietracker</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<style>
+  :root{
+    --bg:#0f1418; --panel:#161d24; --panel2:#1e2833; --text:#eef2f5; --muted:#8fa1ac;
+    --accent:#3ba7ff; --accent2:#37d67a; --danger:#ff5c5c; --border:#2a3742;
+  }
+  html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}
+  #map{position:absolute;inset:0;background:#111;}
+  .topbar{
+    position:absolute; top:0; left:0; right:0; z-index:1000;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 12px; gap:8px; pointer-events:none;
+  }
+  .topbar > *{pointer-events:auto;}
+  .badge{
+    background:rgba(22,29,36,0.92); border:1px solid var(--border); border-radius:12px;
+    padding:8px 12px; font-size:13px; color:var(--muted); backdrop-filter:blur(4px);
+    box-shadow:0 2px 10px rgba(0,0,0,0.35);
+  }
+  .badge b{color:var(--text); font-weight:600;}
+  select#layerSelect{
+    background:rgba(22,29,36,0.92); color:var(--text); border:1px solid var(--border);
+    border-radius:12px; padding:8px 10px; font-size:13px; box-shadow:0 2px 10px rgba(0,0,0,0.35);
+  }
+  .bottombar{
+    position:absolute; left:0; right:0; bottom:0; z-index:1000;
+    display:flex; gap:8px; padding:12px; justify-content:center; flex-wrap:wrap;
+    pointer-events:none;
+  }
+  .bottombar > *{pointer-events:auto;}
+  button{
+    border:1px solid var(--border); background:var(--panel2); color:var(--text);
+    padding:12px 16px; border-radius:14px; font-size:14px; font-weight:600;
+    box-shadow:0 2px 10px rgba(0,0,0,0.35); cursor:pointer; min-width:96px;
+  }
+  button:active{transform:scale(0.97);}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#04131f;}
+  button.recording{background:var(--accent2); border-color:var(--accent2); color:#04220f;}
+  button.danger{background:var(--danger); border-color:var(--danger); color:#2a0000;}
+  .stats{
+    position:absolute; top:56px; left:12px; z-index:1000;
+    background:rgba(22,29,36,0.92); border:1px solid var(--border); border-radius:12px;
+    padding:8px 12px; font-size:12px; color:var(--muted); line-height:1.6;
+    box-shadow:0 2px 10px rgba(0,0,0,0.35); pointer-events:none;
+  }
+  .stats b{color:var(--text);}
+  .me-icon{position:relative; width:34px; height:34px;}
+  .me-dot{
+    position:absolute; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px;
+    background:var(--accent); border:2px solid #fff; border-radius:50%;
+    box-shadow:0 0 0 4px rgba(59,167,255,0.25);
+  }
+  .me-arrow{
+    position:absolute; left:50%; top:50%; width:0; height:0;
+    margin-left:-9px; margin-top:-30px;
+    border-left:9px solid transparent; border-right:9px solid transparent;
+    border-bottom:16px solid var(--accent);
+    transform-origin:9px 30px;
+    filter:drop-shadow(0 0 2px rgba(0,0,0,0.6));
+  }
+  .leaflet-control-attribution{font-size:10px !important;}
+  .toast{
+    position:absolute; bottom:80px; left:50%; transform:translateX(-50%);
+    background:rgba(22,29,36,0.96); border:1px solid var(--border); color:var(--text);
+    padding:10px 16px; border-radius:12px; font-size:13px; z-index:2000;
+    box-shadow:0 4px 16px rgba(0,0,0,0.4); opacity:0; transition:opacity 0.25s;
+    pointer-events:none; max-width:80vw; text-align:center;
+  }
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="topbar">
+  <div class="badge" id="statusBadge">Locatie zoeken…</div>
+  <select id="layerSelect" aria-label="Kaarttype"></select>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="bottombar">
+  <button id="btnCenter">📍 Centreren</button>
+  <button id="btnTrack" class="primary">▶️ Start spoor</button>
+  <button id="btnClear" class="danger">🗑️ Wis spoor</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Opslag ----------
+  var STORAGE_KEY = "locatietracker.track.v1";
+  var STORAGE_SETTINGS = "locatietracker.settings.v1";
+
+  function loadTrack(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }catch(e){ return []; }
+  }
+  function saveTrack(points){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(points)); }catch(e){}
+  }
+  function loadSettings(){
+    try{
+      var raw = localStorage.getItem(STORAGE_SETTINGS);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){ return {}; }
+  }
+  function saveSettings(s){
+    try{ localStorage.setItem(STORAGE_SETTINGS, JSON.stringify(s)); }catch(e){}
+  }
+
+  var settings = loadSettings();
+  var track = loadTrack();
+  var isTracking = !!settings.isTracking;
+
+  // ---------- Kaart ----------
+  var map = L.map('map', { zoomControl: true, attributionControl: true })
+    .setView([52.0907, 5.1214], 15); // NL fallback (De Bilt), wordt overschreven zodra locatie bekend is
+
+  var layers = {
+    "Straat (OSM)": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; OpenStreetMap'
+    }),
+    "Topografisch": L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17, attribution: '&copy; OpenStreetMap, SRTM | &copy; OpenTopoMap'
+    }),
+    "Satelliet": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, attribution: 'Tiles &copy; Esri'
+    }),
+    "Fiets/Wandel": L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
+      maxZoom: 20, attribution: '&copy; OpenStreetMap, CyclOSM'
+    })
+  };
+
+  var layerNames = Object.keys(layers);
+  var startLayerName = settings.layer && layers[settings.layer] ? settings.layer : layerNames[0];
+  layers[startLayerName].addTo(map);
+
+  var layerSelect = document.getElementById('layerSelect');
+  layerNames.forEach(function(name){
+    var opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if(name === startLayerName) opt.selected = true;
+    layerSelect.appendChild(opt);
+  });
+  layerSelect.addEventListener('change', function(){
+    Object.values(layers).forEach(function(l){ map.removeLayer(l); });
+    layers[layerSelect.value].addTo(map);
+    settings.layer = layerSelect.value;
+    saveSettings(settings);
+  });
+
+  // ---------- Eigen positie + richting-icoon ----------
+  var meIconEl = document.createElement('div');
+  meIconEl.className = 'me-icon';
+  meIconEl.innerHTML = '<div class="me-arrow"></div><div class="me-dot"></div>';
+  var meIcon = L.divIcon({ html: meIconEl.outerHTML, className: '', iconSize: [34,34], iconAnchor: [17,17] });
+  var meMarker = L.marker([52.0907,5.1214], { icon: meIcon, zIndexOffset: 1000 }).addTo(map);
+
+  var accuracyCircle = L.circle([52.0907,5.1214], { radius: 0, color:'#3ba7ff', weight:1, fillOpacity:0.08 }).addTo(map);
+
+  var polyline = L.polyline(track.map(function(p){return [p.lat,p.lng];}), {
+    color:'#37d67a', weight:4, opacity:0.85, lineJoin:'round'
+  }).addTo(map);
+
+  var hasCentered = false;
+  var currentHeading = 0;
+  var lastFix = null;
+
+  function setArrowRotation(deg){
+    var arrow = meMarker.getElement() && meMarker.getElement().querySelector('.me-arrow');
+    if(arrow){ arrow.style.transform = 'rotate(' + deg + 'deg)'; }
+  }
+
+  function fmtCoord(v){ return v.toFixed(5); }
+  function fmtSpeed(mps){
+    if(mps == null || isNaN(mps)) return '–';
+    return (mps*3.6).toFixed(1) + ' km/u';
+  }
+
+  function trackDistanceMeters(){
+    var d = 0;
+    for(var i=1;i<track.length;i++){
+      d += map.distance([track[i-1].lat,track[i-1].lng],[track[i].lat,track[i].lng]);
+    }
+    return d;
+  }
+
+  function updateStats(){
+    var dist = trackDistanceMeters();
+    var distTxt = dist >= 1000 ? (dist/1000).toFixed(2)+' km' : Math.round(dist)+' m';
+    document.getElementById('stats').innerHTML =
+      '<div>Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b></div>' +
+      (lastFix ? '<div>Snelheid: <b>' + fmtSpeed(lastFix.speed) + '</b> · nauwkeurigheid ±' + Math.round(lastFix.accuracy) + ' m</div>' : '');
+  }
+
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(showToast._h);
+    showToast._h = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  function onPosition(pos){
+    var c = pos.coords;
+    lastFix = c;
+    var latlng = [c.latitude, c.longitude];
+
+    meMarker.setLatLng(latlng);
+    accuracyCircle.setLatLng(latlng);
+    accuracyCircle.setRadius(c.accuracy || 0);
+
+    if(c.heading != null && !isNaN(c.heading)){
+      currentHeading = c.heading;
+      setArrowRotation(currentHeading);
+    }
+
+    if(!hasCentered){
+      map.setView(latlng, 17);
+      hasCentered = true;
+    }
+
+    document.getElementById('statusBadge').innerHTML = '<b>Locatie actief</b> · ' + fmtCoord(c.latitude) + ', ' + fmtCoord(c.longitude);
+
+    if(isTracking){
+      var last = track[track.length-1];
+      var moved = !last || map.distance(latlng, [last.lat,last.lng]) >= 3; // min. 3m tussen punten
+      if(moved){
+        track.push({ lat: c.latitude, lng: c.longitude, t: Date.now() });
+        polyline.setLatLngs(track.map(function(p){return [p.lat,p.lng];}));
+        saveTrack(track);
+      }
+    }
+    updateStats();
+  }
+
+  function onPositionError(err){
+    document.getElementById('statusBadge').innerHTML = '<b>Geen locatie</b> · ' + (err.message || 'controleer toestemming');
+  }
+
+  if('geolocation' in navigator){
+    navigator.geolocation.watchPosition(onPosition, onPositionError, {
+      enableHighAccuracy: true, maximumAge: 1000, timeout: 15000
+    });
+  } else {
+    document.getElementById('statusBadge').textContent = 'Geolocatie niet ondersteund';
+  }
+
+  // Kompas-richting (device orientation) — nauwkeuriger dan GPS-heading bij lopen op lage snelheid
+  function onOrientation(e){
+    var heading = null;
+    if(typeof e.webkitCompassHeading === 'number'){
+      heading = e.webkitCompassHeading; // iOS: al t.o.v. noord
+    } else if(e.alpha != null){
+      heading = 360 - e.alpha; // Android/overig: benadering
+    }
+    if(heading != null && !isNaN(heading)){
+      currentHeading = heading;
+      setArrowRotation(currentHeading);
+    }
+  }
+
+  function enableCompass(){
+    if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      DeviceOrientationEvent.requestPermission().then(function(state){
+        if(state === 'granted'){
+          window.addEventListener('deviceorientation', onOrientation, true);
+        }
+      }).catch(function(){});
+    } else if('ondeviceorientationabsolute' in window){
+      window.addEventListener('deviceorientationabsolute', onOrientation, true);
+    } else {
+      window.addEventListener('deviceorientation', onOrientation, true);
+    }
+  }
+  // Compass vraagt op iOS om een gebruikersactie; koppel aan eerste tik op de kaart
+  document.body.addEventListener('click', enableCompass, { once: true });
+  enableCompass();
+
+  // ---------- Bediening ----------
+  document.getElementById('btnCenter').addEventListener('click', function(){
+    if(lastFix){
+      map.setView([lastFix.latitude, lastFix.longitude], Math.max(map.getZoom(),17));
+    } else {
+      showToast('Nog geen locatie bekend');
+    }
+  });
+
+  var btnTrack = document.getElementById('btnTrack');
+  function refreshTrackButton(){
+    if(isTracking){
+      btnTrack.textContent = '⏸️ Pauzeer spoor';
+      btnTrack.classList.add('recording');
+      btnTrack.classList.remove('primary');
+    } else {
+      btnTrack.textContent = '▶️ Start spoor';
+      btnTrack.classList.remove('recording');
+      btnTrack.classList.add('primary');
+    }
+  }
+  refreshTrackButton();
+
+  btnTrack.addEventListener('click', function(){
+    isTracking = !isTracking;
+    settings.isTracking = isTracking;
+    saveSettings(settings);
+    refreshTrackButton();
+    showToast(isTracking ? 'Spoor wordt opgenomen' : 'Spoor gepauzeerd');
+  });
+
+  document.getElementById('btnClear').addEventListener('click', function(){
+    if(track.length === 0) return;
+    if(confirm('Gevolgde route wissen? Dit kan niet ongedaan worden gemaakt.')){
+      track = [];
+      polyline.setLatLngs([]);
+      saveTrack(track);
+      updateStats();
+      showToast('Spoor gewist');
+    }
+  });
+
+  updateStats();
+})();
+</script>
+</body>
+</html>
