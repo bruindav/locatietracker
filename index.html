@@ -1,4 +1,4 @@
-<!-- Fix: Rustiger scherm door alle bediening in een uitklapbaar zijmenu, plus routeplanner met instelbaar startpunt en tussenpunten (branch fix-8) -->
+<!-- Fix: Tijdens routeplanning verschijnt een compacte balk op de kaart met snelle acties (startpunt/tussenpunt/bestemming/klaar), zodat je het zijmenu niet steeds hoeft te openen; balk verdwijnt automatisch als je klaar bent (branch fix-9) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -62,6 +62,25 @@
     box-shadow:0 4px 14px rgba(0,0,0,0.45); cursor:pointer;
   }
   .fab-center:active{ transform:scale(0.95); }
+
+  /* ---------- Zwevende plan-balk (alleen tijdens routeplanning) ---------- */
+  .planbar{
+    position:absolute; left:12px; right:12px; bottom:88px; z-index:1000;
+    display:none; flex-direction:column; gap:8px;
+    background:rgba(22,29,36,0.95); border:1px solid var(--border); border-radius:14px;
+    padding:10px; box-shadow:0 4px 16px rgba(0,0,0,0.4);
+  }
+  .planbar.show{ display:flex; }
+  .planbar .row{ display:flex; gap:6px; }
+  .planbtn{
+    flex:1; border:1px solid var(--border); background:var(--panel2); color:var(--text);
+    padding:10px 4px; border-radius:10px; font-size:12px; font-weight:600; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0;
+  }
+  .planbtn .ic{ font-size:18px; }
+  .planbtn.armed{ background:var(--warn); border-color:var(--warn); color:#2a1900; }
+  .planbtn.finish{ background:var(--accent2); border-color:var(--accent2); color:#04220f; }
+  .planbar .hint2{ font-size:12px; color:var(--muted); text-align:center; }
 
   /* ---------- Zijmenu (drawer) ---------- */
   .drawer-backdrop{
@@ -179,6 +198,16 @@
 </div>
 
 <button class="fab-center" id="btnCenter" aria-label="Centreren">📍</button>
+
+<div class="planbar" id="planbar">
+  <div class="hint2" id="planbarHint">Kies wat je wilt instellen</div>
+  <div class="row">
+    <button class="planbtn" id="pbStart"><span class="ic">📍</span>Start</button>
+    <button class="planbtn" id="pbWaypoint"><span class="ic">➕</span>Punt</button>
+    <button class="planbtn" id="pbDestination"><span class="ic">🚩</span>Doel</button>
+    <button class="planbtn finish" id="pbFinish"><span class="ic">✔️</span>Klaar</button>
+  </div>
+</div>
 
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <div class="drawer" id="drawer">
@@ -476,19 +505,47 @@
     planningControls.style.display = planningEnabled ? 'block' : 'none';
     planningHint.style.display = planningEnabled ? 'none' : 'block';
     document.getElementById('btnUseCurrentStart').style.display = customStart ? 'block' : 'none';
+    refreshPlanBar();
   }
-  refreshPlanningUI();
   chkPlanning.addEventListener('change', function(){
     planningEnabled = chkPlanning.checked;
     settings.planningEnabled = planningEnabled;
     saveSettings(settings);
     pendingPick = null;
     refreshPlanningUI();
+    if(planningEnabled) closeDrawer();
   });
+
+  // ---------- Zwevende plan-balk op de kaart (alleen zichtbaar tijdens routeplanning) ----------
+  var planbarEl = document.getElementById('planbar');
+  function refreshPlanBar(){
+    planbarEl.classList.toggle('show', planningEnabled);
+    document.getElementById('pbStart').classList.toggle('armed', pendingPick === 'start');
+    document.getElementById('pbWaypoint').classList.toggle('armed', pendingPick === 'waypoint');
+    document.getElementById('pbDestination').classList.toggle('armed', pendingPick === 'destination');
+    var hint = document.getElementById('planbarHint');
+    if(pendingPick === 'start'){ hint.textContent = 'Tik op de kaart voor het startpunt'; }
+    else if(pendingPick === 'waypoint'){ hint.textContent = 'Tik op de kaart voor tussenpunt ' + (waypoints.length+1); }
+    else if(pendingPick === 'destination'){ hint.textContent = 'Tik op de kaart voor de bestemming'; }
+    else { hint.textContent = waypoints.length ? (waypoints.length + ' tussenpunt' + (waypoints.length>1?'en':'') + ' gekozen') : 'Kies wat je wilt instellen'; }
+  }
+  document.getElementById('pbStart').addEventListener('click', function(){ armPick('start', 'startpunt kiezen'); });
+  document.getElementById('pbWaypoint').addEventListener('click', function(){ armPick('waypoint', 'tussenpunt ' + (waypoints.length+1) + ' toevoegen'); });
+  document.getElementById('pbDestination').addEventListener('click', function(){ armPick('destination', 'bestemming kiezen'); });
+  document.getElementById('pbFinish').addEventListener('click', function(){
+    planningEnabled = false;
+    pendingPick = null;
+    settings.planningEnabled = false;
+    saveSettings(settings);
+    refreshPlanningUI();
+    showToast('Route klaar');
+  });
+  refreshPlanningUI();
 
   function armPick(target, label){
     pendingPick = target;
     closeDrawer();
+    refreshPlanBar();
     showToast('Tik op de kaart: ' + label);
   }
   document.getElementById('btnPickStart').addEventListener('click', function(){
@@ -572,6 +629,7 @@
       redrawWaypointMarkers();
       renderWaypointList();
       pendingPick = null;
+      refreshPlanBar();
       calculateRoute();
       return;
     }
@@ -583,11 +641,12 @@
       destinationLatLng = { lat: e.latlng.lat, lng: e.latlng.lng };
       if(destinationMarker){ destinationMarker.setLatLng(e.latlng); } else { destinationMarker = L.marker(e.latlng, { icon: destIcon, zIndexOffset: 900 }).addTo(map); }
       pendingPick = null;
+      refreshPlanBar();
       calculateRoute();
       return;
     }
     // planningEnabled true, geen pendingPick: negeer losse taps zodat je niet per ongeluk iets verplaatst
-    showToast('Kies eerst een actie in het menu (startpunt, tussenpunt of bestemming)');
+    showToast('Kies eerst een actie (startpunt, tussenpunt of bestemming)');
   });
 
   var hasCentered = false;
