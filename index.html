@@ -1,4 +1,4 @@
-<!-- Fix: Tijdens routeplanning verschijnt een compacte balk op de kaart met snelle acties (startpunt/tussenpunt/bestemming/klaar), zodat je het zijmenu niet steeds hoeft te openen; balk verdwijnt automatisch als je klaar bent (branch fix-9) -->
+<!-- Fix: Afstand per etappe (punt-tot-punt) en totaal tonen tijdens het plannen, zowel in de plan-balk als in het zijmenu (branch fix-10) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -201,6 +201,7 @@
 
 <div class="planbar" id="planbar">
   <div class="hint2" id="planbarHint">Kies wat je wilt instellen</div>
+  <div class="hint2" id="planbarDist" style="color:var(--text); font-weight:600;"></div>
   <div class="row">
     <button class="planbtn" id="pbStart"><span class="ic">📍</span>Start</button>
     <button class="planbtn" id="pbWaypoint"><span class="ic">➕</span>Punt</button>
@@ -253,6 +254,7 @@
     <div class="hint" id="planningHint" style="display:none;">Tik op de kaart om je bestemming te kiezen — de route wordt automatisch berekend.</div>
     <button class="dbtn danger" id="btnClearRoute" style="margin-top:10px;">✖️ Wis route</button>
     <div class="stat-line" id="routeStat" style="margin-top:10px;"></div>
+    <div class="stat-line" id="legStat"></div>
   </section>
 
   <section>
@@ -434,6 +436,7 @@
   var destinationLatLng = null;
   var pendingPick = null;      // null | 'start' | 'waypoint' | 'destination'
   var currentRouteInfoText = null;
+  var currentLegsInfo = null; // array van {from, to, km} tussen opeenvolgende punten
   var routeRequestSeq = 0;
 
   var routeLine = L.polyline([], { color:'#ffb020', weight:5, opacity:0.9, dashArray:'2 10', lineCap:'round' }).addTo(map);
@@ -528,6 +531,15 @@
     else if(pendingPick === 'waypoint'){ hint.textContent = 'Tik op de kaart voor tussenpunt ' + (waypoints.length+1); }
     else if(pendingPick === 'destination'){ hint.textContent = 'Tik op de kaart voor de bestemming'; }
     else { hint.textContent = waypoints.length ? (waypoints.length + ' tussenpunt' + (waypoints.length>1?'en':'') + ' gekozen') : 'Kies wat je wilt instellen'; }
+
+    var distEl = document.getElementById('planbarDist');
+    if(currentLegsInfo && currentLegsInfo.length){
+      var legsTxt = currentLegsInfo.map(function(leg){ return leg.km + ' km'; }).join(' + ');
+      var totalKm = currentLegsInfo.reduce(function(sum, leg){ return sum + parseFloat(leg.km); }, 0);
+      distEl.textContent = (currentLegsInfo.length > 1 ? (legsTxt + ' = ') : '') + totalKm.toFixed(2) + ' km totaal';
+    } else {
+      distEl.textContent = '';
+    }
   }
   document.getElementById('pbStart').addEventListener('click', function(){ armPick('start', 'startpunt kiezen'); });
   document.getElementById('pbWaypoint').addEventListener('click', function(){ armPick('waypoint', 'tussenpunt ' + (waypoints.length+1) + ' toevoegen'); });
@@ -575,6 +587,7 @@
     redrawWaypointMarkers();
     renderWaypointList();
     currentRouteInfoText = null;
+    currentLegsInfo = null;
     refreshPlanningUI();
     updateStats();
   }
@@ -584,7 +597,13 @@
     var originPoint = customStart ? customStart : (lastFix ? { lat: lastFix.latitude, lng: lastFix.longitude } : null);
     if(!originPoint || !destinationLatLng){ return; }
 
-    var points = [originPoint].concat(planningEnabled ? waypoints : []).concat([destinationLatLng]);
+    var routeWaypoints = planningEnabled ? waypoints : [];
+    var points = [originPoint].concat(routeWaypoints).concat([destinationLatLng]);
+    function pointLabel(idx){
+      if(idx === 0) return 'Start';
+      if(idx === points.length - 1) return 'Bestemming';
+      return 'Tussenpunt ' + idx;
+    }
     var mySeq = ++routeRequestSeq;
     var prof = ROUTE_PROFILES[travelMode];
     var coordStr = points.map(function(p){ return p.lng + ',' + p.lat; }).join(';');
@@ -606,9 +625,19 @@
       var km = (route.distance/1000).toFixed(route.distance >= 10000 ? 0 : 1);
       var mins = Math.round(route.duration/60);
       var tijd = mins >= 60 ? (Math.floor(mins/60) + 'u ' + (mins%60) + 'm') : (mins + ' min');
-      var viaTxt = (planningEnabled && waypoints.length) ? (' via ' + waypoints.length + ' tussenpunt' + (waypoints.length>1?'en':'')) : '';
+      var viaTxt = (planningEnabled && routeWaypoints.length) ? (' via ' + routeWaypoints.length + ' tussenpunt' + (routeWaypoints.length>1?'en':'')) : '';
       currentRouteInfoText = km + ' km · ' + tijd + ' (' + prof.label + viaTxt + ')';
+
+      currentLegsInfo = (route.legs || []).map(function(leg, i){
+        return {
+          from: pointLabel(i),
+          to: pointLabel(i+1),
+          km: (leg.distance/1000).toFixed(leg.distance >= 10000 ? 0 : 2)
+        };
+      });
+
       updateStats();
+      refreshPlanBar();
     }).catch(function(err){
       if(mySeq !== routeRequestSeq) return;
       showToast('Route mislukt: ' + (err.message || 'onbekende fout'));
@@ -697,6 +726,9 @@
 
     document.getElementById('routeStat').innerHTML = currentRouteInfoText ?
       ('Route: <b>' + currentRouteInfoText + '</b>') : 'Nog geen route berekend.';
+
+    document.getElementById('legStat').innerHTML = (currentLegsInfo && currentLegsInfo.length > 1) ?
+      currentLegsInfo.map(function(leg){ return leg.from + ' → ' + leg.to + ': <b>' + leg.km + ' km</b>'; }).join('<br>') : '';
 
     document.getElementById('locStat').innerHTML =
       (lastFix ? ('Positie: <b>' + fmtCoord(lastFix.latitude) + ', ' + fmtCoord(lastFix.longitude) + '</b><br>' +
