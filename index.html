@@ -1,4 +1,4 @@
-<!-- Fix: Bestemming kiezen door op de kaart te tikken, route ernaartoe tekenen, met keuze lopen/fietsen/rijden die de routebepaling beïnvloedt (branch fix-7) -->
+<!-- Fix: Rustiger scherm door alle bediening in een uitklapbaar zijmenu, plus routeplanner met instelbaar startpunt en tussenpunten (branch fix-8) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -20,69 +20,123 @@
 <style>
   :root{
     --bg:#0f1418; --panel:#161d24; --panel2:#1e2833; --text:#eef2f5; --muted:#8fa1ac;
-    --accent:#3ba7ff; --accent2:#37d67a; --danger:#ff5c5c; --border:#2a3742;
+    --accent:#3ba7ff; --accent2:#37d67a; --danger:#ff5c5c; --border:#2a3742; --warn:#ffb020;
   }
   html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}
   #map{position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;background:#111;}
   #errorBanner{
-    position:fixed; top:0; left:0; right:0; z-index:5000; display:none;
+    position:fixed; top:0; left:0; right:0; z-index:6000; display:none;
     background:#5a1414; color:#ffdede; padding:12px 14px; font-size:13px;
     font-family:monospace; white-space:pre-wrap; word-break:break-word;
     border-bottom:2px solid #ff5c5c; max-height:40vh; overflow:auto;
   }
+
+  /* ---------- Compacte topbar: alleen menuknop + status ---------- */
   .topbar{
     position:absolute; top:0; left:0; right:0; z-index:1000;
     display:flex; align-items:center; justify-content:space-between;
     padding:10px 12px; gap:8px; pointer-events:none;
   }
   .topbar > *{pointer-events:auto;}
+  .iconbtn{
+    width:44px; height:44px; border-radius:12px; border:1px solid var(--border);
+    background:rgba(22,29,36,0.92); color:var(--text); font-size:20px;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 10px rgba(0,0,0,0.35); cursor:pointer;
+  }
   .badge{
     background:rgba(22,29,36,0.92); border:1px solid var(--border); border-radius:12px;
-    padding:8px 12px; font-size:13px; color:var(--muted); backdrop-filter:blur(4px);
-    box-shadow:0 2px 10px rgba(0,0,0,0.35);
+    padding:10px 14px; font-size:13px; color:var(--muted);
+    box-shadow:0 2px 10px rgba(0,0,0,0.35); max-width:62vw;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .badge b{color:var(--text); font-weight:600;}
-  select#layerSelect{
-    background:rgba(22,29,36,0.92); color:var(--text); border:1px solid var(--border);
-    border-radius:12px; padding:8px 10px; font-size:13px; box-shadow:0 2px 10px rgba(0,0,0,0.35);
+
+  /* ---------- Zwevende centreer-knop ---------- */
+  .fab-center{
+    position:absolute; right:14px; bottom:20px; z-index:1000;
+    width:52px; height:52px; border-radius:50%; border:1px solid var(--border);
+    background:var(--accent); color:#04131f; font-size:22px;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,0.45); cursor:pointer;
   }
-  .modebar{
-    position:absolute; top:56px; right:12px; z-index:1000;
-    display:flex; gap:4px; background:rgba(22,29,36,0.92); border:1px solid var(--border);
-    border-radius:12px; padding:4px; box-shadow:0 2px 10px rgba(0,0,0,0.35);
+  .fab-center:active{ transform:scale(0.95); }
+
+  /* ---------- Zijmenu (drawer) ---------- */
+  .drawer-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1900;
+    opacity:0; pointer-events:none; transition:opacity 0.2s;
   }
+  .drawer-backdrop.open{ opacity:1; pointer-events:auto; }
+  .drawer{
+    position:fixed; top:0; bottom:0; left:0; width:min(320px,86vw); z-index:2000;
+    background:var(--panel); border-right:1px solid var(--border);
+    transform:translateX(-105%); transition:transform 0.22s ease;
+    overflow-y:auto; padding:16px 14px 90px 14px; box-sizing:border-box;
+  }
+  .drawer.open{ transform:translateX(0); }
+  .drawer h1{ font-size:17px; margin:0 0 14px 0; display:flex; align-items:center; justify-content:space-between; }
+  .drawer h1 .closeBtn{ cursor:pointer; font-size:20px; color:var(--muted); padding:4px 8px; }
+  .drawer section{
+    background:var(--panel2); border:1px solid var(--border); border-radius:14px;
+    padding:12px; margin-bottom:12px;
+  }
+  .drawer section h2{
+    font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted);
+    margin:0 0 10px 0; font-weight:700;
+  }
+  .drawer label.row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    font-size:14px; margin-bottom:8px;
+  }
+  .drawer select{
+    width:100%; background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:10px; padding:9px 10px; font-size:14px;
+  }
+  .modebar{ display:flex; gap:6px; }
   .modebtn{
-    border:none; background:transparent; color:var(--muted); font-size:18px;
-    padding:6px 9px; border-radius:9px; cursor:pointer; min-width:auto;
-    box-shadow:none;
+    flex:1; border:1px solid var(--border); background:var(--panel); color:var(--muted);
+    font-size:19px; padding:9px 0; border-radius:10px; cursor:pointer;
   }
-  .modebtn.active{ background:var(--accent); color:#04131f; }
-  .dest-pin{
-    width:30px; height:42px; position:relative;
+  .modebtn.active{ background:var(--accent); border-color:var(--accent); color:#04131f; }
+  .dbtn{
+    width:100%; border:1px solid var(--border); background:var(--panel); color:var(--text);
+    padding:10px 12px; border-radius:10px; font-size:14px; font-weight:600;
+    cursor:pointer; margin-bottom:8px; text-align:left;
   }
-  .bottombar{
-    position:absolute; left:0; right:0; bottom:0; z-index:1000;
-    display:flex; gap:8px; padding:12px; justify-content:center; flex-wrap:wrap;
-    pointer-events:none;
+  .dbtn:last-child{ margin-bottom:0; }
+  .dbtn.primary{ background:var(--accent); border-color:var(--accent); color:#04131f; }
+  .dbtn.recording{ background:var(--accent2); border-color:var(--accent2); color:#04220f; }
+  .dbtn.danger{ background:var(--danger); border-color:var(--danger); color:#2a0000; }
+  .switch{ position:relative; width:42px; height:24px; flex:0 0 auto; }
+  .switch input{ display:none; }
+  .switch .track{
+    position:absolute; inset:0; background:var(--panel); border:1px solid var(--border);
+    border-radius:12px; transition:background 0.15s;
   }
-  .bottombar > *{pointer-events:auto;}
-  button{
-    border:1px solid var(--border); background:var(--panel2); color:var(--text);
-    padding:12px 16px; border-radius:14px; font-size:14px; font-weight:600;
-    box-shadow:0 2px 10px rgba(0,0,0,0.35); cursor:pointer; min-width:96px;
+  .switch .knob{
+    position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:var(--muted); transition:transform 0.15s, background 0.15s;
   }
-  button:active{transform:scale(0.97);}
-  button.primary{background:var(--accent); border-color:var(--accent); color:#04131f;}
-  button.recording{background:var(--accent2); border-color:var(--accent2); color:#04220f;}
-  button.danger{background:var(--danger); border-color:var(--danger); color:#2a0000;}
-  .stats{
-    position:absolute; top:56px; left:12px; z-index:1000;
-    background:rgba(22,29,36,0.92); border:1px solid var(--border); border-radius:12px;
-    padding:8px 12px; font-size:12px; color:var(--muted); line-height:1.6;
-    box-shadow:0 2px 10px rgba(0,0,0,0.35); pointer-events:none;
+  .switch input:checked + .track{ background:var(--accent); border-color:var(--accent); }
+  .switch input:checked + .track .knob{ transform:translateX(18px); background:#04131f; }
+  .waypoint-list{ display:flex; flex-direction:column; gap:6px; margin:8px 0; }
+  .waypoint-chip{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--panel); border:1px solid var(--border); border-radius:9px;
+    padding:7px 10px; font-size:13px;
   }
-  .stats b{color:var(--text);}
+  .waypoint-chip .num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:20px; height:20px; border-radius:50%; background:var(--accent);
+    color:#04131f; font-weight:700; font-size:11px; margin-right:8px;
+  }
+  .waypoint-chip .rm{ color:var(--danger); cursor:pointer; font-weight:700; padding:2px 6px; }
+  .stat-line{ font-size:13px; color:var(--muted); margin-bottom:6px; line-height:1.5; }
+  .stat-line b{ color:var(--text); }
+  .hint{ font-size:12px; color:var(--muted); margin-top:4px; line-height:1.4; }
+
   .me-icon{position:relative; width:34px; height:34px;}
   .me-dot{
     position:absolute; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px;
@@ -97,11 +151,17 @@
     transform-origin:9px 30px;
     filter:drop-shadow(0 0 2px rgba(0,0,0,0.6));
   }
+  .pin{ width:30px; height:42px; }
+  .wp-pin{
+    width:26px; height:26px; border-radius:50%; background:var(--accent); color:#04131f;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
+    border:2px solid #0d1f2b; box-shadow:0 2px 6px rgba(0,0,0,.4);
+  }
   .leaflet-control-attribution{font-size:10px !important;}
   .toast{
-    position:absolute; bottom:80px; left:50%; transform:translateX(-50%);
+    position:absolute; bottom:84px; left:50%; transform:translateX(-50%);
     background:rgba(22,29,36,0.96); border:1px solid var(--border); color:var(--text);
-    padding:10px 16px; border-radius:12px; font-size:13px; z-index:2000;
+    padding:10px 16px; border-radius:12px; font-size:13px; z-index:2500;
     box-shadow:0 4px 16px rgba(0,0,0,0.4); opacity:0; transition:opacity 0.25s;
     pointer-events:none; max-width:80vw; text-align:center;
   }
@@ -114,23 +174,62 @@
 <div id="map"></div>
 
 <div class="topbar">
+  <button class="iconbtn" id="btnMenu" aria-label="Menu">☰</button>
   <div class="badge" id="statusBadge">Locatie zoeken…</div>
-  <select id="layerSelect" aria-label="Kaarttype"></select>
 </div>
 
-<div class="stats" id="stats"></div>
+<button class="fab-center" id="btnCenter" aria-label="Centreren">📍</button>
 
-<div class="modebar" id="modebar">
-  <button class="modebtn" data-mode="foot" title="Lopen">🚶</button>
-  <button class="modebtn" data-mode="bike" title="Fietsen">🚴</button>
-  <button class="modebtn" data-mode="car" title="Rijden">🚗</button>
-</div>
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<div class="drawer" id="drawer">
+  <h1>Locatietracker <span class="closeBtn" id="btnCloseDrawer">✕</span></h1>
 
-<div class="bottombar">
-  <button id="btnCenter">📍 Centreren</button>
-  <button id="btnTrack" class="primary">▶️ Start spoor</button>
-  <button id="btnClear" class="danger">🗑️ Wis spoor</button>
-  <button id="btnClearRoute">✖️ Wis route</button>
+  <section>
+    <h2>Kaarttype</h2>
+    <select id="layerSelect" aria-label="Kaarttype"></select>
+  </section>
+
+  <section>
+    <h2>Vervoerswijze</h2>
+    <div class="modebar" id="modebar">
+      <button class="modebtn" data-mode="foot" title="Lopen">🚶</button>
+      <button class="modebtn" data-mode="bike" title="Fietsen">🚴</button>
+      <button class="modebtn" data-mode="car" title="Rijden">🚗</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wandelspoor</h2>
+    <button class="dbtn primary" id="btnTrack">▶️ Start spoor</button>
+    <button class="dbtn danger" id="btnClear">🗑️ Wis spoor</button>
+    <div class="stat-line" id="trackStat" style="margin-top:10px;"></div>
+  </section>
+
+  <section>
+    <h2>Route plannen</h2>
+    <label class="row">
+      <span>Startpunt en tussenpunten zelf kiezen</span>
+      <span class="switch">
+        <input type="checkbox" id="chkPlanning">
+        <span class="track"><span class="knob"></span></span>
+      </span>
+    </label>
+    <div id="planningControls" style="display:none;">
+      <button class="dbtn" id="btnPickStart">📍 Startpunt op kaart kiezen</button>
+      <button class="dbtn" id="btnUseCurrentStart">↩️ Gebruik huidige locatie als start</button>
+      <button class="dbtn" id="btnAddWaypoint">➕ Tussenpunt toevoegen</button>
+      <div class="waypoint-list" id="waypointList"></div>
+      <button class="dbtn" id="btnPickDestination">🚩 Bestemming op kaart kiezen</button>
+    </div>
+    <div class="hint" id="planningHint" style="display:none;">Tik op de kaart om je bestemming te kiezen — de route wordt automatisch berekend.</div>
+    <button class="dbtn danger" id="btnClearRoute" style="margin-top:10px;">✖️ Wis route</button>
+    <div class="stat-line" id="routeStat" style="margin-top:10px;"></div>
+  </section>
+
+  <section>
+    <h2>Locatie &amp; richting</h2>
+    <div class="stat-line" id="locStat"></div>
+  </section>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -172,11 +271,30 @@
   });
   requestWakeLock();
 
+  // ---------- Zijmenu (drawer) ----------
+  var drawerOpen = false;
+  var drawerEl = document.getElementById('drawer');
+  var backdropEl = document.getElementById('drawerBackdrop');
+  function openDrawer(){
+    drawerOpen = true;
+    drawerEl.classList.add('open');
+    backdropEl.classList.add('open');
+  }
+  function closeDrawer(){
+    drawerOpen = false;
+    drawerEl.classList.remove('open');
+    backdropEl.classList.remove('open');
+  }
+  document.getElementById('btnMenu').addEventListener('click', openDrawer);
+  document.getElementById('btnCloseDrawer').addEventListener('click', closeDrawer);
+  backdropEl.addEventListener('click', closeDrawer);
+
   // ---------- Terugknop niet meteen laten afsluiten (dubbele-terug-om-te-sluiten) ----------
   var backPressArmed = false;
   var backPressTimer = null;
   history.pushState({ locatietracker: true }, '', location.href);
   window.addEventListener('popstate', function(){
+    if(drawerOpen){ closeDrawer(); history.pushState({ locatietracker: true }, '', location.href); return; }
     if(backPressArmed){
       return; // tweede keer binnen de tijdslimiet: laat de navigatie nu wel doorgaan
     }
@@ -186,6 +304,14 @@
     clearTimeout(backPressTimer);
     backPressTimer = setTimeout(function(){ backPressArmed = false; }, 2000);
   });
+
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(showToast._h);
+    showToast._h = setTimeout(function(){ t.classList.remove('show'); }, 2400);
+  }
 
   // ---------- Opslag ----------
   var STORAGE_KEY = "locatietracker.track.v1";
@@ -266,23 +392,63 @@
     color:'#37d67a', weight:4, opacity:0.85, lineJoin:'round'
   }).addTo(map);
 
-  // ---------- Navigatie: bestemming kiezen, route berekenen en tekenen ----------
+  // ---------- Navigatie: route plannen (startpunt, tussenpunten, bestemming) ----------
   var ROUTE_PROFILES = {
     foot: { server: 'routed-foot', profile: 'foot',    label: 'lopen'   },
     bike: { server: 'routed-bike', profile: 'bike',    label: 'fietsen' },
     car:  { server: 'routed-car',  profile: 'driving', label: 'rijden'  }
   };
   var travelMode = (settings.travelMode && ROUTE_PROFILES[settings.travelMode]) ? settings.travelMode : 'foot';
+  var planningEnabled = !!settings.planningEnabled;
+  var customStart = null;      // {lat,lng} of null (dan geldt huidige locatie)
+  var waypoints = [];          // array van {lat,lng}
   var destinationLatLng = null;
-  var destinationMarker = null;
+  var pendingPick = null;      // null | 'start' | 'waypoint' | 'destination'
   var currentRouteInfoText = null;
-  var routeLine = L.polyline([], { color:'#ffb020', weight:5, opacity:0.9, dashArray:'2 10', lineCap:'round' }).addTo(map);
   var routeRequestSeq = 0;
 
-  var destIcon = L.divIcon({
-    html: '<div class="dest-pin"><svg viewBox="0 0 30 42" width="30" height="42"><path d="M15 0C6.7 0 0 6.7 0 15c0 11.2 15 27 15 27s15-15.8 15-27C30 6.7 23.3 0 15 0z" fill="#ff5c5c" stroke="#0d1f2b" stroke-width="2"/><circle cx="15" cy="15" r="6" fill="#fff"/></svg></div>',
-    className: '', iconSize: [30,42], iconAnchor: [15,42]
-  });
+  var routeLine = L.polyline([], { color:'#ffb020', weight:5, opacity:0.9, dashArray:'2 10', lineCap:'round' }).addTo(map);
+  var startMarker = null;
+  var destinationMarker = null;
+  var waypointMarkers = [];
+
+  function pinIcon(color){
+    return L.divIcon({
+      className: '', iconSize: [30,42], iconAnchor: [15,42],
+      html: '<div class="pin"><svg viewBox="0 0 30 42" width="30" height="42"><path d="M15 0C6.7 0 0 6.7 0 15c0 11.2 15 27 15 27s15-15.8 15-27C30 6.7 23.3 0 15 0z" fill="' + color + '" stroke="#0d1f2b" stroke-width="2"/><circle cx="15" cy="15" r="6" fill="#fff"/></svg></div>'
+    });
+  }
+  var destIcon = pinIcon('#ff5c5c');
+  var startIcon = pinIcon('#37d67a');
+  function waypointIcon(n){
+    return L.divIcon({ className:'', iconSize:[26,26], iconAnchor:[13,13], html:'<div class="wp-pin">' + n + '</div>' });
+  }
+
+  function redrawWaypointMarkers(){
+    waypointMarkers.forEach(function(m){ map.removeLayer(m); });
+    waypointMarkers = waypoints.map(function(wp, i){
+      return L.marker([wp.lat, wp.lng], { icon: waypointIcon(i+1), zIndexOffset: 800 }).addTo(map);
+    });
+  }
+
+  function renderWaypointList(){
+    var listEl = document.getElementById('waypointList');
+    listEl.innerHTML = '';
+    waypoints.forEach(function(wp, i){
+      var chip = document.createElement('div');
+      chip.className = 'waypoint-chip';
+      chip.innerHTML = '<span><span class="num">' + (i+1) + '</span>Tussenpunt ' + (i+1) + '</span><span class="rm" data-i="' + i + '">✕</span>';
+      listEl.appendChild(chip);
+    });
+    listEl.querySelectorAll('.rm').forEach(function(el){
+      el.addEventListener('click', function(){
+        waypoints.splice(parseInt(el.getAttribute('data-i'), 10), 1);
+        redrawWaypointMarkers();
+        renderWaypointList();
+        calculateRoute();
+      });
+    });
+  }
 
   function updateModeButtons(){
     document.querySelectorAll('.modebtn').forEach(function(btn){
@@ -298,26 +464,75 @@
     settings.travelMode = travelMode;
     saveSettings(settings);
     updateModeButtons();
-    if(destinationLatLng) calculateRoute();
+    calculateRoute();
+  });
+
+  // ---------- Planningsmodus aan/uit ----------
+  var chkPlanning = document.getElementById('chkPlanning');
+  var planningControls = document.getElementById('planningControls');
+  var planningHint = document.getElementById('planningHint');
+  function refreshPlanningUI(){
+    chkPlanning.checked = planningEnabled;
+    planningControls.style.display = planningEnabled ? 'block' : 'none';
+    planningHint.style.display = planningEnabled ? 'none' : 'block';
+    document.getElementById('btnUseCurrentStart').style.display = customStart ? 'block' : 'none';
+  }
+  refreshPlanningUI();
+  chkPlanning.addEventListener('change', function(){
+    planningEnabled = chkPlanning.checked;
+    settings.planningEnabled = planningEnabled;
+    saveSettings(settings);
+    pendingPick = null;
+    refreshPlanningUI();
+  });
+
+  function armPick(target, label){
+    pendingPick = target;
+    closeDrawer();
+    showToast('Tik op de kaart: ' + label);
+  }
+  document.getElementById('btnPickStart').addEventListener('click', function(){
+    armPick('start', 'startpunt kiezen');
+  });
+  document.getElementById('btnUseCurrentStart').addEventListener('click', function(){
+    customStart = null;
+    if(startMarker){ map.removeLayer(startMarker); startMarker = null; }
+    refreshPlanningUI();
+    calculateRoute();
+  });
+  document.getElementById('btnAddWaypoint').addEventListener('click', function(){
+    armPick('waypoint', 'tussenpunt ' + (waypoints.length+1) + ' toevoegen');
+  });
+  document.getElementById('btnPickDestination').addEventListener('click', function(){
+    armPick('destination', 'bestemming kiezen');
   });
 
   function clearRoute(){
+    customStart = null;
+    waypoints = [];
     destinationLatLng = null;
+    pendingPick = null;
     routeLine.setLatLngs([]);
+    if(startMarker){ map.removeLayer(startMarker); startMarker = null; }
     if(destinationMarker){ map.removeLayer(destinationMarker); destinationMarker = null; }
+    redrawWaypointMarkers();
+    renderWaypointList();
     currentRouteInfoText = null;
+    refreshPlanningUI();
     updateStats();
   }
   document.getElementById('btnClearRoute').addEventListener('click', clearRoute);
 
   function calculateRoute(){
-    if(!lastFix || !destinationLatLng){ return; }
+    var originPoint = customStart ? customStart : (lastFix ? { lat: lastFix.latitude, lng: lastFix.longitude } : null);
+    if(!originPoint || !destinationLatLng){ return; }
+
+    var points = [originPoint].concat(planningEnabled ? waypoints : []).concat([destinationLatLng]);
     var mySeq = ++routeRequestSeq;
     var prof = ROUTE_PROFILES[travelMode];
+    var coordStr = points.map(function(p){ return p.lng + ',' + p.lat; }).join(';');
     var url = 'https://routing.openstreetmap.de/' + prof.server + '/route/v1/' + prof.profile + '/' +
-      lastFix.longitude + ',' + lastFix.latitude + ';' +
-      destinationLatLng.lng + ',' + destinationLatLng.lat +
-      '?overview=full&geometries=geojson';
+      coordStr + '?overview=full&geometries=geojson';
 
     showToast('Route berekenen (' + prof.label + ')…');
     fetch(url).then(function(res){
@@ -334,30 +549,45 @@
       var km = (route.distance/1000).toFixed(route.distance >= 10000 ? 0 : 1);
       var mins = Math.round(route.duration/60);
       var tijd = mins >= 60 ? (Math.floor(mins/60) + 'u ' + (mins%60) + 'm') : (mins + ' min');
-      showRouteInfo(km + ' km · ' + tijd + ' (' + prof.label + ')');
+      var viaTxt = (planningEnabled && waypoints.length) ? (' via ' + waypoints.length + ' tussenpunt' + (waypoints.length>1?'en':'')) : '';
+      currentRouteInfoText = km + ' km · ' + tijd + ' (' + prof.label + viaTxt + ')';
+      updateStats();
     }).catch(function(err){
       if(mySeq !== routeRequestSeq) return;
       showToast('Route mislukt: ' + (err.message || 'onbekende fout'));
     });
   }
 
-  function showRouteInfo(text){
-    currentRouteInfoText = text;
-    updateStats();
-  }
-
   map.on('click', function(e){
-    if(!lastFix){
-      showToast('Wacht op locatie voordat je een bestemming kiest');
+    if(pendingPick === 'start'){
+      customStart = { lat: e.latlng.lat, lng: e.latlng.lng };
+      if(startMarker){ startMarker.setLatLng(e.latlng); } else { startMarker = L.marker(e.latlng, { icon: startIcon, zIndexOffset: 850 }).addTo(map); }
+      pendingPick = null;
+      refreshPlanningUI();
+      calculateRoute();
       return;
     }
-    destinationLatLng = e.latlng;
-    if(destinationMarker){
-      destinationMarker.setLatLng(e.latlng);
-    } else {
-      destinationMarker = L.marker(e.latlng, { icon: destIcon, zIndexOffset: 900 }).addTo(map);
+    if(pendingPick === 'waypoint'){
+      waypoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
+      redrawWaypointMarkers();
+      renderWaypointList();
+      pendingPick = null;
+      calculateRoute();
+      return;
     }
-    calculateRoute();
+    if(pendingPick === 'destination' || !planningEnabled){
+      if(!lastFix && !customStart){
+        showToast('Wacht op locatie voordat je een bestemming kiest');
+        return;
+      }
+      destinationLatLng = { lat: e.latlng.lat, lng: e.latlng.lng };
+      if(destinationMarker){ destinationMarker.setLatLng(e.latlng); } else { destinationMarker = L.marker(e.latlng, { icon: destIcon, zIndexOffset: 900 }).addTo(map); }
+      pendingPick = null;
+      calculateRoute();
+      return;
+    }
+    // planningEnabled true, geen pendingPick: negeer losse taps zodat je niet per ongeluk iets verplaatst
+    showToast('Kies eerst een actie in het menu (startpunt, tussenpunt of bestemming)');
   });
 
   var hasCentered = false;
@@ -402,19 +632,17 @@
     var dist = trackDistanceMeters();
     var distTxt = dist >= 1000 ? (dist/1000).toFixed(2)+' km' : Math.round(dist)+' m';
     var bron = usingRecentMovementHeading() ? 'looprichting (GPS)' : 'kompas (stilstand)';
-    document.getElementById('stats').innerHTML =
-      '<div>Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b></div>' +
-      (lastFix ? '<div>Snelheid: <b>' + fmtSpeed(lastFix.speed) + '</b> · nauwkeurigheid ±' + Math.round(lastFix.accuracy) + ' m</div>' : '') +
-      '<div>Pijl: <b>' + bron + '</b></div>' +
-      (currentRouteInfoText ? '<div>Route: <b>' + currentRouteInfoText + '</b></div>' : '');
-  }
 
-  function showToast(msg){
-    var t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    clearTimeout(showToast._h);
-    showToast._h = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+    document.getElementById('trackStat').innerHTML =
+      'Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b>';
+
+    document.getElementById('routeStat').innerHTML = currentRouteInfoText ?
+      ('Route: <b>' + currentRouteInfoText + '</b>') : 'Nog geen route berekend.';
+
+    document.getElementById('locStat').innerHTML =
+      (lastFix ? ('Positie: <b>' + fmtCoord(lastFix.latitude) + ', ' + fmtCoord(lastFix.longitude) + '</b><br>' +
+        'Snelheid: <b>' + fmtSpeed(lastFix.speed) + '</b> · nauwkeurigheid ±' + Math.round(lastFix.accuracy) + ' m<br>') : 'Positie: onbekend<br>') +
+      'Pijl: <b>' + bron + '</b>';
   }
 
   function onPosition(pos){
@@ -458,6 +686,10 @@
         saveTrack(track);
       }
     }
+
+    // Route herberekenen zolang er geen los startpunt is gekozen (route volgt dan je huidige positie)
+    if(!customStart && destinationLatLng){ calculateRoute(); }
+
     updateStats();
   }
 
@@ -549,6 +781,7 @@
     }
   });
 
+  renderWaypointList();
   updateStats();
   setInterval(updateStats, 1000);
 
