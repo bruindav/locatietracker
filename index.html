@@ -1,4 +1,4 @@
-<!-- Fix: Route-markers (start, tussenpunten, bestemming) zijn nu sleepbaar om te verplaatsen, en een lange druk opent een menu om het punt te verwijderen (branch fix-14) -->
+<!-- Fix: Hoogtemeters (omhoog/omlaag) van de geplande route tonen, opgehaald via een gratis hoogtedienst op basis van de routegeometrie (branch fix-15) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -279,7 +279,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-14';
+  var APP_VERSION = 'fix-15';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -449,6 +449,8 @@
   var pendingPick = null;      // null | 'start' | 'waypoint' | 'destination'
   var currentRouteInfoText = null;
   var currentLegsInfo = null; // array van {from, to, km} tussen opeenvolgende punten
+  var currentElevationInfo = null; // {gain, loss} in meters, voor de hele route
+  var elevationRequestSeq = 0;
   var routeRequestSeq = 0;
 
   var routeLine = L.polyline([], { color:'#ffb020', weight:5, opacity:0.9, dashArray:'2 10', lineCap:'round' }).addTo(map);
@@ -571,7 +573,8 @@
     if(currentLegsInfo && currentLegsInfo.length){
       var legsTxt = currentLegsInfo.map(function(leg){ return leg.km + ' km'; }).join(' + ');
       var totalKm = currentLegsInfo.reduce(function(sum, leg){ return sum + parseFloat(leg.km); }, 0);
-      distEl.textContent = (currentLegsInfo.length > 1 ? (legsTxt + ' = ') : '') + totalKm.toFixed(2) + ' km totaal';
+      var elevTxt = currentElevationInfo ? (' · ⬆' + currentElevationInfo.gain + 'm ⬇' + currentElevationInfo.loss + 'm') : '';
+      distEl.textContent = (currentLegsInfo.length > 1 ? (legsTxt + ' = ') : '') + totalKm.toFixed(2) + ' km totaal' + elevTxt;
     } else {
       distEl.textContent = '';
     }
@@ -623,6 +626,7 @@
     renderWaypointList();
     currentRouteInfoText = null;
     currentLegsInfo = null;
+    currentElevationInfo = null;
     refreshPlanningUI();
     updateStats();
   }
@@ -639,6 +643,7 @@
       routeLine.setLatLngs([]);
       currentRouteInfoText = null;
       currentLegsInfo = null;
+      currentElevationInfo = null;
       updateStats();
       refreshPlanBar();
       return;
@@ -682,11 +687,50 @@
         };
       });
 
+      currentElevationInfo = null;
+      fetchElevationInfo(coords, mySeq);
+
       updateStats();
       refreshPlanBar();
     }).catch(function(err){
       if(mySeq !== routeRequestSeq) return;
       showToast('Route mislukt: ' + (err.message || 'onbekende fout'));
+    });
+  }
+
+  // Hoogtemeters (omhoog/omlaag) ophalen via een gratis hoogtedienst, op basis van
+  // de daadwerkelijke routegeometrie (met SRTM-achtige resolutie, dus een benadering)
+  function fetchElevationInfo(routeCoords, mySeq){
+    var MAX_SAMPLES = 60;
+    var sampled = routeCoords;
+    if(routeCoords.length > MAX_SAMPLES){
+      sampled = [];
+      var step = (routeCoords.length - 1) / (MAX_SAMPLES - 1);
+      for(var i = 0; i < MAX_SAMPLES; i++){
+        sampled.push(routeCoords[Math.round(i * step)]);
+      }
+    }
+    var myElevSeq = ++elevationRequestSeq;
+    fetch('https://api.open-elevation.com/api/v1/lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locations: sampled.map(function(c){ return { latitude: c[0], longitude: c[1] }; }) })
+    }).then(function(res){
+      if(!res.ok) throw new Error('status ' + res.status);
+      return res.json();
+    }).then(function(data){
+      if(mySeq !== routeRequestSeq || myElevSeq !== elevationRequestSeq) return;
+      var elevations = (data.results || []).map(function(r){ return r.elevation; });
+      var gain = 0, loss = 0;
+      for(var i = 1; i < elevations.length; i++){
+        var diff = elevations[i] - elevations[i-1];
+        if(diff > 0){ gain += diff; } else { loss += -diff; }
+      }
+      currentElevationInfo = { gain: Math.round(gain), loss: Math.round(loss) };
+      updateStats();
+      refreshPlanBar();
+    }).catch(function(){
+      // Stil falen: hoogte-info is een aanvulling, geen kritiek onderdeel van de route
     });
   }
 
@@ -802,7 +846,7 @@
       'Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b>';
 
     document.getElementById('routeStat').innerHTML = currentRouteInfoText ?
-      ('Route: <b>' + currentRouteInfoText + '</b>') : 'Nog geen route berekend.';
+      ('Route: <b>' + currentRouteInfoText + '</b>' + (currentElevationInfo ? ('<br>Hoogte: <b>⬆ ' + currentElevationInfo.gain + ' m</b> · <b>⬇ ' + currentElevationInfo.loss + ' m</b>') : '')) : 'Nog geen route berekend.';
 
     document.getElementById('legStat').innerHTML = (currentLegsInfo && currentLegsInfo.length > 1) ?
       currentLegsInfo.map(function(leg){ return leg.from + ' → ' + leg.to + ': <b>' + leg.km + ' km</b>'; }).join('<br>') : '';
