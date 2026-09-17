@@ -1,4 +1,4 @@
-<!-- Fix: Pijl toont nu de werkelijke looprichting (peiling tussen GPS-punten) i.p.v. de kompasrichting van het toestel; kompas alleen als fallback bij stilstand (branch fix-3) -->
+<!-- Fix: Scherm blijft actief tijdens gebruik (Wake Lock) en terugknop sluit de app niet meteen af (dubbele-terug-om-te-sluiten) (branch fix-4) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -123,6 +123,37 @@
     showError('Leaflet (kaartbibliotheek) kon niet geladen worden. Controleer je internetverbinding of een adblocker/DNS-filter dat cdnjs.cloudflare.com blokkeert.');
     return;
   }
+
+  // ---------- Scherm actief houden (Wake Lock) ----------
+  var wakeLock = null;
+  async function requestWakeLock(){
+    try{
+      if('wakeLock' in navigator){
+        wakeLock = await navigator.wakeLock.request('screen');
+      }
+    }catch(err){
+      // Geen kritieke fout: sommige browsers/apparaten ondersteunen dit niet of vereisen een gebruikersactie
+    }
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible'){ requestWakeLock(); }
+  });
+  requestWakeLock();
+
+  // ---------- Terugknop niet meteen laten afsluiten (dubbele-terug-om-te-sluiten) ----------
+  var backPressArmed = false;
+  var backPressTimer = null;
+  history.pushState({ locatietracker: true }, '', location.href);
+  window.addEventListener('popstate', function(){
+    if(backPressArmed){
+      return; // tweede keer binnen de tijdslimiet: laat de navigatie nu wel doorgaan
+    }
+    history.pushState({ locatietracker: true }, '', location.href);
+    backPressArmed = true;
+    showToast('Druk nogmaals op ← om af te sluiten');
+    clearTimeout(backPressTimer);
+    backPressTimer = setTimeout(function(){ backPressArmed = false; }, 2000);
+  });
 
   // ---------- Opslag ----------
   var STORAGE_KEY = "locatietracker.track.v1";
@@ -376,6 +407,7 @@
     settings.isTracking = isTracking;
     saveSettings(settings);
     refreshTrackButton();
+    requestWakeLock();
     showToast(isTracking ? 'Spoor wordt opgenomen' : 'Spoor gepauzeerd');
   });
 
