@@ -1,0 +1,58 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#173347"/>
+      <stop offset="1" stop-color="#0d1f2b"/>
+    </linearGradient>
+    <linearGradient id="mapfold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4ead2"/>
+      <stop offset="1" stop-color="#e3d5ae"/>
+    </linearGradient>
+    <linearGradient id="path" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#37d67a"/>
+      <stop offset="1" stop-color="#2bb867"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Achtergrond: afgeronde app-tegel -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- Kaart (opgevouwen wandelkaart) -->
+  <g transform="translate(66,150)">
+    <path d="M0 26 L126 0 L252 26 L378 0 L378 300 L252 326 L126 300 L0 326 Z"
+          fill="url(#mapfold)" stroke="#c9b789" stroke-width="4" stroke-linejoin="round"/>
+    <line x1="126" y1="0" x2="126" y2="300" stroke="#c9b789" stroke-width="3" stroke-dasharray="2 10" stroke-linecap="round"/>
+    <line x1="252" y1="26" x2="252" y2="326" stroke="#c9b789" stroke-width="3" stroke-dasharray="2 10" stroke-linecap="round"/>
+
+    <!-- Gestippeld wandelpad over de kaart -->
+    <path d="M40 260 C 90 230, 100 190, 150 175 S 230 160, 250 120 S 320 70, 350 55"
+          fill="none" stroke="url(#path)" stroke-width="12" stroke-linecap="round"
+          stroke-dasharray="1 26"/>
+
+    <!-- Startpunt -->
+    <circle cx="40" cy="260" r="10" fill="#37d67a" stroke="#0d1f2b" stroke-width="4"/>
+  </g>
+
+  <!-- Locatiepin met wandelaar-silhouet erin -->
+  <g transform="translate(196,66)">
+    <path d="M60 0 C93 0 120 27 120 60 C120 104 60 168 60 168 C60 168 0 104 0 60 C0 27 27 0 60 0 Z"
+          fill="#3ba7ff" stroke="#0d1f2b" stroke-width="5"/>
+    <!-- Wandelaar (eenvoudige loop-silhouet) -->
+    <g transform="translate(60,58)" fill="#0d1f2b">
+      <circle cx="6" cy="-20" r="10"/>
+      <path d="M6 -8
+               C -2 -8 -8 -2 -10 8
+               L -18 34
+               C -19 39 -12 41 -10 36
+               L -2 14
+               L 2 22
+               L -4 44
+               C -6 49 1 52 4 47
+               L 14 26
+               L 10 6
+               L 20 -2
+               C 25 -6 20 -14 14 -10
+               Z"/>
+    </g>
+  </g>
+</svg>
