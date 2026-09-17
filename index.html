@@ -1,4 +1,4 @@
-<!-- Fix: Hoogtemeters (omhoog/omlaag) van de geplande route tonen, opgehaald via een gratis hoogtedienst op basis van de routegeometrie (branch fix-15) -->
+<!-- Fix: Hoogtemeters ophalen via Open-Meteo (stabieler, wereldwijde dekking, geen sleutel nodig) i.p.v. Open-Elevation (branch fix-16) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -279,7 +279,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-15';
+  var APP_VERSION = 'fix-16';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -711,16 +711,15 @@
       }
     }
     var myElevSeq = ++elevationRequestSeq;
-    fetch('https://api.open-elevation.com/api/v1/lookup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locations: sampled.map(function(c){ return { latitude: c[0], longitude: c[1] }; }) })
-    }).then(function(res){
+    var lats = sampled.map(function(c){ return c[0]; }).join(',');
+    var lngs = sampled.map(function(c){ return c[1]; }).join(',');
+    var url = 'https://api.open-meteo.com/v1/elevation?latitude=' + lats + '&longitude=' + lngs;
+    fetch(url).then(function(res){
       if(!res.ok) throw new Error('status ' + res.status);
       return res.json();
     }).then(function(data){
       if(mySeq !== routeRequestSeq || myElevSeq !== elevationRequestSeq) return;
-      var elevations = (data.results || []).map(function(r){ return r.elevation; });
+      var elevations = data.elevation || [];
       var gain = 0, loss = 0;
       for(var i = 1; i < elevations.length; i++){
         var diff = elevations[i] - elevations[i-1];
