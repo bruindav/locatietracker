@@ -1,4 +1,4 @@
-<!-- Fix: Compatibelere CSS (geen 'inset' shorthand) + zichtbare foutmelding bij script-/laadfouten voor diagnose (branch fix-2) -->
+<!-- Fix: Pijl toont nu de werkelijke looprichting (peiling tussen GPS-punten) i.p.v. de kompasrichting van het toestel; kompas alleen als fallback bij stilstand (branch fix-3) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -206,6 +206,21 @@
   var hasCentered = false;
   var currentHeading = 0;
   var lastFix = null;
+  var lastFixLatLng = null;
+  var lastMovementHeadingTime = 0;
+  var MOVEMENT_HEADING_TIMEOUT_MS = 4000; // na zoveel ms zonder beweging mag het kompas de pijl weer sturen
+
+  function bearingDeg(lat1, lon1, lat2, lon2){
+    var toRad = Math.PI/180, toDeg = 180/Math.PI;
+    var phi1 = lat1*toRad, phi2 = lat2*toRad, dLon = (lon2-lon1)*toRad;
+    var y = Math.sin(dLon)*Math.cos(phi2);
+    var x = Math.cos(phi1)*Math.sin(phi2) - Math.sin(phi1)*Math.cos(phi2)*Math.cos(dLon);
+    return (Math.atan2(y,x)*toDeg + 360) % 360;
+  }
+
+  function usingRecentMovementHeading(){
+    return (Date.now() - lastMovementHeadingTime) < MOVEMENT_HEADING_TIMEOUT_MS;
+  }
 
   function setArrowRotation(deg){
     var arrow = meMarker.getElement() && meMarker.getElement().querySelector('.me-arrow');
@@ -229,9 +244,11 @@
   function updateStats(){
     var dist = trackDistanceMeters();
     var distTxt = dist >= 1000 ? (dist/1000).toFixed(2)+' km' : Math.round(dist)+' m';
+    var bron = usingRecentMovementHeading() ? 'looprichting (GPS)' : 'kompas (stilstand)';
     document.getElementById('stats').innerHTML =
       '<div>Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b></div>' +
-      (lastFix ? '<div>Snelheid: <b>' + fmtSpeed(lastFix.speed) + '</b> · nauwkeurigheid ±' + Math.round(lastFix.accuracy) + ' m</div>' : '');
+      (lastFix ? '<div>Snelheid: <b>' + fmtSpeed(lastFix.speed) + '</b> · nauwkeurigheid ±' + Math.round(lastFix.accuracy) + ' m</div>' : '') +
+      '<div>Pijl: <b>' + bron + '</b></div>';
   }
 
   function showToast(msg){
@@ -251,10 +268,21 @@
     accuracyCircle.setLatLng(latlng);
     accuracyCircle.setRadius(c.accuracy || 0);
 
-    if(c.heading != null && !isNaN(c.heading)){
+    // Looprichting bepalen uit verplaatsing tussen GPS-punten (betrouwbaarder dan ruwe device-heading bij wandelsnelheid)
+    if(lastFixLatLng){
+      var movedSinceLast = map.distance(latlng, lastFixLatLng);
+      if(movedSinceLast >= 3){
+        currentHeading = bearingDeg(lastFixLatLng[0], lastFixLatLng[1], c.latitude, c.longitude);
+        setArrowRotation(currentHeading);
+        lastMovementHeadingTime = Date.now();
+      }
+    } else if(c.heading != null && !isNaN(c.heading)){
+      // Eerste fix: gebruik device-heading indien meteen beschikbaar
       currentHeading = c.heading;
       setArrowRotation(currentHeading);
+      lastMovementHeadingTime = Date.now();
     }
+    lastFixLatLng = latlng;
 
     if(!hasCentered){
       map.setView(latlng, 17);
@@ -287,8 +315,10 @@
     document.getElementById('statusBadge').textContent = 'Geolocatie niet ondersteund';
   }
 
-  // Kompas-richting (device orientation) — nauwkeuriger dan GPS-heading bij lopen op lage snelheid
+  // Kompas-richting (device orientation) — alleen als fallback wanneer er geen recente looprichting uit GPS bekend is
+  // (bijv. bij stilstaan), zodat de pijl niet de fysieke telefoonrichting toont terwijl je loopt
   function onOrientation(e){
+    if(usingRecentMovementHeading()) return;
     var heading = null;
     if(typeof e.webkitCompassHeading === 'number'){
       heading = e.webkitCompassHeading; // iOS: al t.o.v. noord
@@ -361,6 +391,7 @@
   });
 
   updateStats();
+  setInterval(updateStats, 1000);
 
   }catch(err){
     showError((err && err.message) ? err.message : String(err));
