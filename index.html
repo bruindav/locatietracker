@@ -1,4 +1,4 @@
-<!-- Fix: Afstand per etappe (punt-tot-punt) en totaal tonen tijdens het plannen, zowel in de plan-balk als in het zijmenu (branch fix-10) -->
+<!-- Fix: Routelijn wordt al getekend zodra er 2 punten zijn (ook zonder bestemming), zodat je meteen ziet wat je tussenpunten opleveren; versienummer toegevoegd in het zijmenu (branch fix-11) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -213,6 +213,7 @@
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <div class="drawer" id="drawer">
   <h1>Locatietracker <span class="closeBtn" id="btnCloseDrawer">✕</span></h1>
+  <div class="hint" id="versionInfo" style="margin-top:-10px; margin-bottom:12px;"></div>
 
   <section>
     <h2>Kaarttype</h2>
@@ -269,6 +270,9 @@
 <script>
 (function(){
   "use strict";
+
+  var APP_VERSION = 'fix-11';
+  document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
   function showError(msg){
@@ -595,13 +599,23 @@
 
   function calculateRoute(){
     var originPoint = customStart ? customStart : (lastFix ? { lat: lastFix.latitude, lng: lastFix.longitude } : null);
-    if(!originPoint || !destinationLatLng){ return; }
-
     var routeWaypoints = planningEnabled ? waypoints : [];
-    var points = [originPoint].concat(routeWaypoints).concat([destinationLatLng]);
+    var hasDestination = !!destinationLatLng;
+    var points = [originPoint].concat(routeWaypoints);
+    if(hasDestination){ points.push(destinationLatLng); }
+
+    if(!originPoint || points.length < 2){
+      routeLine.setLatLngs([]);
+      currentRouteInfoText = null;
+      currentLegsInfo = null;
+      updateStats();
+      refreshPlanBar();
+      return;
+    }
+
     function pointLabel(idx){
       if(idx === 0) return 'Start';
-      if(idx === points.length - 1) return 'Bestemming';
+      if(hasDestination && idx === points.length - 1) return 'Bestemming';
       return 'Tussenpunt ' + idx;
     }
     var mySeq = ++routeRequestSeq;
@@ -626,7 +640,8 @@
       var mins = Math.round(route.duration/60);
       var tijd = mins >= 60 ? (Math.floor(mins/60) + 'u ' + (mins%60) + 'm') : (mins + ' min');
       var viaTxt = (planningEnabled && routeWaypoints.length) ? (' via ' + routeWaypoints.length + ' tussenpunt' + (routeWaypoints.length>1?'en':'')) : '';
-      currentRouteInfoText = km + ' km · ' + tijd + ' (' + prof.label + viaTxt + ')';
+      var voorlopigTxt = hasDestination ? '' : ' — nog geen bestemming gekozen';
+      currentRouteInfoText = km + ' km · ' + tijd + ' (' + prof.label + viaTxt + ')' + voorlopigTxt;
 
       currentLegsInfo = (route.legs || []).map(function(leg, i){
         return {
@@ -779,7 +794,7 @@
     }
 
     // Route herberekenen zolang er geen los startpunt is gekozen (route volgt dan je huidige positie)
-    if(!customStart && destinationLatLng){ calculateRoute(); }
+    if(!customStart && (destinationLatLng || (planningEnabled && waypoints.length))){ calculateRoute(); }
 
     updateStats();
   }
