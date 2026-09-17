@@ -1,4 +1,4 @@
-<!-- Fix: favicon.ico toegevoegd (fallback voor browsers zoals Vivaldi die geen manifest-icoon gebruiken bij 'Toevoegen aan startscherm') + cache-busting op icoon-links (branch fix-6) -->
+<!-- Fix: Bestemming kiezen door op de kaart te tikken, route ernaartoe tekenen, met keuze lopen/fietsen/rijden die de routebepaling beïnvloedt (branch fix-7) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -46,6 +46,20 @@
   select#layerSelect{
     background:rgba(22,29,36,0.92); color:var(--text); border:1px solid var(--border);
     border-radius:12px; padding:8px 10px; font-size:13px; box-shadow:0 2px 10px rgba(0,0,0,0.35);
+  }
+  .modebar{
+    position:absolute; top:56px; right:12px; z-index:1000;
+    display:flex; gap:4px; background:rgba(22,29,36,0.92); border:1px solid var(--border);
+    border-radius:12px; padding:4px; box-shadow:0 2px 10px rgba(0,0,0,0.35);
+  }
+  .modebtn{
+    border:none; background:transparent; color:var(--muted); font-size:18px;
+    padding:6px 9px; border-radius:9px; cursor:pointer; min-width:auto;
+    box-shadow:none;
+  }
+  .modebtn.active{ background:var(--accent); color:#04131f; }
+  .dest-pin{
+    width:30px; height:42px; position:relative;
   }
   .bottombar{
     position:absolute; left:0; right:0; bottom:0; z-index:1000;
@@ -106,10 +120,17 @@
 
 <div class="stats" id="stats"></div>
 
+<div class="modebar" id="modebar">
+  <button class="modebtn" data-mode="foot" title="Lopen">🚶</button>
+  <button class="modebtn" data-mode="bike" title="Fietsen">🚴</button>
+  <button class="modebtn" data-mode="car" title="Rijden">🚗</button>
+</div>
+
 <div class="bottombar">
   <button id="btnCenter">📍 Centreren</button>
   <button id="btnTrack" class="primary">▶️ Start spoor</button>
   <button id="btnClear" class="danger">🗑️ Wis spoor</button>
+  <button id="btnClearRoute">✖️ Wis route</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -245,6 +266,100 @@
     color:'#37d67a', weight:4, opacity:0.85, lineJoin:'round'
   }).addTo(map);
 
+  // ---------- Navigatie: bestemming kiezen, route berekenen en tekenen ----------
+  var ROUTE_PROFILES = {
+    foot: { server: 'routed-foot', profile: 'foot',    label: 'lopen'   },
+    bike: { server: 'routed-bike', profile: 'bike',    label: 'fietsen' },
+    car:  { server: 'routed-car',  profile: 'driving', label: 'rijden'  }
+  };
+  var travelMode = (settings.travelMode && ROUTE_PROFILES[settings.travelMode]) ? settings.travelMode : 'foot';
+  var destinationLatLng = null;
+  var destinationMarker = null;
+  var currentRouteInfoText = null;
+  var routeLine = L.polyline([], { color:'#ffb020', weight:5, opacity:0.9, dashArray:'2 10', lineCap:'round' }).addTo(map);
+  var routeRequestSeq = 0;
+
+  var destIcon = L.divIcon({
+    html: '<div class="dest-pin"><svg viewBox="0 0 30 42" width="30" height="42"><path d="M15 0C6.7 0 0 6.7 0 15c0 11.2 15 27 15 27s15-15.8 15-27C30 6.7 23.3 0 15 0z" fill="#ff5c5c" stroke="#0d1f2b" stroke-width="2"/><circle cx="15" cy="15" r="6" fill="#fff"/></svg></div>',
+    className: '', iconSize: [30,42], iconAnchor: [15,42]
+  });
+
+  function updateModeButtons(){
+    document.querySelectorAll('.modebtn').forEach(function(btn){
+      btn.classList.toggle('active', btn.getAttribute('data-mode') === travelMode);
+    });
+  }
+  updateModeButtons();
+
+  document.getElementById('modebar').addEventListener('click', function(e){
+    var btn = e.target.closest('.modebtn');
+    if(!btn) return;
+    travelMode = btn.getAttribute('data-mode');
+    settings.travelMode = travelMode;
+    saveSettings(settings);
+    updateModeButtons();
+    if(destinationLatLng) calculateRoute();
+  });
+
+  function clearRoute(){
+    destinationLatLng = null;
+    routeLine.setLatLngs([]);
+    if(destinationMarker){ map.removeLayer(destinationMarker); destinationMarker = null; }
+    currentRouteInfoText = null;
+    updateStats();
+  }
+  document.getElementById('btnClearRoute').addEventListener('click', clearRoute);
+
+  function calculateRoute(){
+    if(!lastFix || !destinationLatLng){ return; }
+    var mySeq = ++routeRequestSeq;
+    var prof = ROUTE_PROFILES[travelMode];
+    var url = 'https://routing.openstreetmap.de/' + prof.server + '/route/v1/' + prof.profile + '/' +
+      lastFix.longitude + ',' + lastFix.latitude + ';' +
+      destinationLatLng.lng + ',' + destinationLatLng.lat +
+      '?overview=full&geometries=geojson';
+
+    showToast('Route berekenen (' + prof.label + ')…');
+    fetch(url).then(function(res){
+      if(!res.ok) throw new Error('Routeserver gaf status ' + res.status);
+      return res.json();
+    }).then(function(data){
+      if(mySeq !== routeRequestSeq) return; // inmiddels een nieuwere aanvraag gestart
+      if(data.code !== 'Ok' || !data.routes || !data.routes.length){
+        throw new Error(data.message || 'Geen route gevonden');
+      }
+      var route = data.routes[0];
+      var coords = route.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
+      routeLine.setLatLngs(coords);
+      var km = (route.distance/1000).toFixed(route.distance >= 10000 ? 0 : 1);
+      var mins = Math.round(route.duration/60);
+      var tijd = mins >= 60 ? (Math.floor(mins/60) + 'u ' + (mins%60) + 'm') : (mins + ' min');
+      showRouteInfo(km + ' km · ' + tijd + ' (' + prof.label + ')');
+    }).catch(function(err){
+      if(mySeq !== routeRequestSeq) return;
+      showToast('Route mislukt: ' + (err.message || 'onbekende fout'));
+    });
+  }
+
+  function showRouteInfo(text){
+    currentRouteInfoText = text;
+    updateStats();
+  }
+
+  map.on('click', function(e){
+    if(!lastFix){
+      showToast('Wacht op locatie voordat je een bestemming kiest');
+      return;
+    }
+    destinationLatLng = e.latlng;
+    if(destinationMarker){
+      destinationMarker.setLatLng(e.latlng);
+    } else {
+      destinationMarker = L.marker(e.latlng, { icon: destIcon, zIndexOffset: 900 }).addTo(map);
+    }
+    calculateRoute();
+  });
+
   var hasCentered = false;
   var currentHeading = 0;
   var lastFix = null;
@@ -290,7 +405,8 @@
     document.getElementById('stats').innerHTML =
       '<div>Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b></div>' +
       (lastFix ? '<div>Snelheid: <b>' + fmtSpeed(lastFix.speed) + '</b> · nauwkeurigheid ±' + Math.round(lastFix.accuracy) + ' m</div>' : '') +
-      '<div>Pijl: <b>' + bron + '</b></div>';
+      '<div>Pijl: <b>' + bron + '</b></div>' +
+      (currentRouteInfoText ? '<div>Route: <b>' + currentRouteInfoText + '</b></div>' : '');
   }
 
   function showToast(msg){
