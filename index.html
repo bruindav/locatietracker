@@ -1,4 +1,4 @@
-<!-- Fix: Routelijn wordt al getekend zodra er 2 punten zijn (ook zonder bestemming), zodat je meteen ziet wat je tussenpunten opleveren; versienummer toegevoegd in het zijmenu (branch fix-11) -->
+<!-- Fix: Meldingen (toasts) verplaatst naar bovenin het scherm, zodat ze niet meer over de plan-balk/bedieningsknoppen heen vallen (branch fix-12) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -178,7 +178,7 @@
   }
   .leaflet-control-attribution{font-size:10px !important;}
   .toast{
-    position:absolute; bottom:84px; left:50%; transform:translateX(-50%);
+    position:absolute; top:64px; left:50%; transform:translateX(-50%);
     background:rgba(22,29,36,0.96); border:1px solid var(--border); color:var(--text);
     padding:10px 16px; border-radius:12px; font-size:13px; z-index:2500;
     box-shadow:0 4px 16px rgba(0,0,0,0.4); opacity:0; transition:opacity 0.25s;
@@ -271,7 +271,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-11';
+  var APP_VERSION = 'fix-12';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
