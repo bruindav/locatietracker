@@ -1,5 +1,4 @@
-<!-- Fix: Versienummer bijgewerkt naar fix-13 (branch fix-13) -->
-<!-- Fix: Meldingen (toasts) verplaatst naar bovenin het scherm, zodat ze niet meer over de plan-balk/bedieningsknoppen heen vallen (branch fix-12) -->
+<!-- Fix: Route-markers (start, tussenpunten, bestemming) zijn nu sleepbaar om te verplaatsen, en een lange druk opent een menu om het punt te verwijderen (branch fix-14) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -178,6 +177,14 @@
     border:2px solid #0d1f2b; box-shadow:0 2px 6px rgba(0,0,0,.4);
   }
   .leaflet-control-attribution{font-size:10px !important;}
+  .leaflet-popup-content-wrapper{ background:var(--panel2); color:var(--text); border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.4); }
+  .leaflet-popup-tip{ background:var(--panel2); }
+  .leaflet-popup-content{ margin:10px 12px; font-size:13px; line-height:1.5; }
+  .leaflet-popup-close-button{ color:var(--muted) !important; }
+  .popupDeleteBtn{
+    margin-top:8px; width:100%; padding:8px 10px; border-radius:9px; border:1px solid var(--danger);
+    background:var(--danger); color:#2a0000; font-weight:700; font-size:13px; cursor:pointer;
+  }
   .toast{
     position:absolute; top:64px; left:50%; transform:translateX(-50%);
     background:rgba(22,29,36,0.96); border:1px solid var(--border); color:var(--text);
@@ -272,7 +279,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-13';
+  var APP_VERSION = 'fix-14';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -461,10 +468,33 @@
     return L.divIcon({ className:'', iconSize:[26,26], iconAnchor:[13,13], html:'<div class="wp-pin">' + n + '</div>' });
   }
 
+  function bindPointMarker(marker, label, onDelete){
+    marker.bindPopup('<div>' + label + '<br><button class="popupDeleteBtn">🗑️ Verwijderen</button></div>');
+    marker.on('contextmenu', function(){ marker.openPopup(); });
+    marker.on('popupopen', function(e){
+      var btn = e.popup.getElement().querySelector('.popupDeleteBtn');
+      if(btn){ btn.addEventListener('click', function(){ marker.closePopup(); onDelete(); }); }
+    });
+  }
+
+  function removeWaypointAt(i){
+    waypoints.splice(i, 1);
+    redrawWaypointMarkers();
+    renderWaypointList();
+    calculateRoute();
+  }
+
   function redrawWaypointMarkers(){
     waypointMarkers.forEach(function(m){ map.removeLayer(m); });
     waypointMarkers = waypoints.map(function(wp, i){
-      return L.marker([wp.lat, wp.lng], { icon: waypointIcon(i+1), zIndexOffset: 800 }).addTo(map);
+      var m = L.marker([wp.lat, wp.lng], { icon: waypointIcon(i+1), zIndexOffset: 800, draggable: true }).addTo(map);
+      m.on('dragend', function(e){
+        var ll = e.target.getLatLng();
+        waypoints[i] = { lat: ll.lat, lng: ll.lng };
+        calculateRoute();
+      });
+      bindPointMarker(m, 'Tussenpunt ' + (i+1), function(){ removeWaypointAt(i); });
+      return m;
     });
   }
 
@@ -663,7 +693,23 @@
   map.on('click', function(e){
     if(pendingPick === 'start'){
       customStart = { lat: e.latlng.lat, lng: e.latlng.lng };
-      if(startMarker){ startMarker.setLatLng(e.latlng); } else { startMarker = L.marker(e.latlng, { icon: startIcon, zIndexOffset: 850 }).addTo(map); }
+      if(startMarker){
+        startMarker.setLatLng(e.latlng);
+      } else {
+        startMarker = L.marker(e.latlng, { icon: startIcon, zIndexOffset: 850, draggable: true }).addTo(map);
+        startMarker.on('dragend', function(ev){
+          var ll = ev.target.getLatLng();
+          customStart = { lat: ll.lat, lng: ll.lng };
+          calculateRoute();
+        });
+        bindPointMarker(startMarker, 'Startpunt', function(){
+          customStart = null;
+          map.removeLayer(startMarker);
+          startMarker = null;
+          refreshPlanningUI();
+          calculateRoute();
+        });
+      }
       pendingPick = null;
       refreshPlanningUI();
       calculateRoute();
@@ -684,7 +730,22 @@
         return;
       }
       destinationLatLng = { lat: e.latlng.lat, lng: e.latlng.lng };
-      if(destinationMarker){ destinationMarker.setLatLng(e.latlng); } else { destinationMarker = L.marker(e.latlng, { icon: destIcon, zIndexOffset: 900 }).addTo(map); }
+      if(destinationMarker){
+        destinationMarker.setLatLng(e.latlng);
+      } else {
+        destinationMarker = L.marker(e.latlng, { icon: destIcon, zIndexOffset: 900, draggable: true }).addTo(map);
+        destinationMarker.on('dragend', function(ev){
+          var ll = ev.target.getLatLng();
+          destinationLatLng = { lat: ll.lat, lng: ll.lng };
+          calculateRoute();
+        });
+        bindPointMarker(destinationMarker, 'Bestemming', function(){
+          destinationLatLng = null;
+          map.removeLayer(destinationMarker);
+          destinationMarker = null;
+          calculateRoute();
+        });
+      }
       pendingPick = null;
       refreshPlanBar();
       calculateRoute();
