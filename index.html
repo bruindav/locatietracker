@@ -1,4 +1,4 @@
-<!-- Fix: Hoogtemeters ophalen via Open-Meteo (stabieler, wereldwijde dekking, geen sleutel nodig) i.p.v. Open-Elevation (branch fix-16) -->
+<!-- Fix: Routeplanning vereenvoudigd — gewoon punten aantikken (eerste is altijd start), plus een 'rondje'-optie via lange druk die de route automatisch terugtrekt naar het startpunt (branch fix-17) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -208,12 +208,10 @@
 <button class="fab-center" id="btnCenter" aria-label="Centreren">📍</button>
 
 <div class="planbar" id="planbar">
-  <div class="hint2" id="planbarHint">Kies wat je wilt instellen</div>
+  <div class="hint2" id="planbarHint">Tik op de kaart voor je startpunt</div>
   <div class="hint2" id="planbarDist" style="color:var(--text); font-weight:600;"></div>
   <div class="row">
-    <button class="planbtn" id="pbStart"><span class="ic">📍</span>Start</button>
-    <button class="planbtn" id="pbWaypoint"><span class="ic">➕</span>Punt</button>
-    <button class="planbtn" id="pbDestination"><span class="ic">🚩</span>Doel</button>
+    <button class="planbtn" id="pbLoop"><span class="ic">🔁</span>Rondje</button>
     <button class="planbtn finish" id="pbFinish"><span class="ic">✔️</span>Klaar</button>
   </div>
 </div>
@@ -247,20 +245,23 @@
   <section>
     <h2>Route plannen</h2>
     <label class="row">
-      <span>Startpunt en tussenpunten zelf kiezen</span>
+      <span>Punten aanwijzen (eerste = startpunt)</span>
       <span class="switch">
         <input type="checkbox" id="chkPlanning">
         <span class="track"><span class="knob"></span></span>
       </span>
     </label>
     <div id="planningControls" style="display:none;">
-      <button class="dbtn" id="btnPickStart">📍 Startpunt op kaart kiezen</button>
-      <button class="dbtn" id="btnUseCurrentStart">↩️ Gebruik huidige locatie als start</button>
-      <button class="dbtn" id="btnAddWaypoint">➕ Tussenpunt toevoegen</button>
       <div class="waypoint-list" id="waypointList"></div>
-      <button class="dbtn" id="btnPickDestination">🚩 Bestemming op kaart kiezen</button>
+      <label class="row">
+        <span>🔁 Rondje: terug naar startpunt</span>
+        <span class="switch">
+          <input type="checkbox" id="chkLoop">
+          <span class="track"><span class="knob"></span></span>
+        </span>
+      </label>
     </div>
-    <div class="hint" id="planningHint" style="display:none;">Tik op de kaart om je bestemming te kiezen — de route wordt automatisch berekend.</div>
+    <div class="hint" id="planningHint">Tik op de kaart om je bestemming te kiezen — de route wordt automatisch berekend vanaf je huidige locatie.</div>
     <button class="dbtn danger" id="btnClearRoute" style="margin-top:10px;">✖️ Wis route</button>
     <div class="stat-line" id="routeStat" style="margin-top:10px;"></div>
     <div class="stat-line" id="legStat"></div>
@@ -279,7 +280,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-16';
+  var APP_VERSION = 'fix-17';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -435,7 +436,7 @@
     color:'#37d67a', weight:4, opacity:0.85, lineJoin:'round'
   }).addTo(map);
 
-  // ---------- Navigatie: route plannen (startpunt, tussenpunten, bestemming) ----------
+  // ---------- Navigatie: route plannen (gewoon punten aantikken, eerste = start) ----------
   var ROUTE_PROFILES = {
     foot: { server: 'routed-foot', profile: 'foot',    label: 'lopen'   },
     bike: { server: 'routed-bike', profile: 'bike',    label: 'fietsen' },
@@ -443,10 +444,9 @@
   };
   var travelMode = (settings.travelMode && ROUTE_PROFILES[settings.travelMode]) ? settings.travelMode : 'foot';
   var planningEnabled = !!settings.planningEnabled;
-  var customStart = null;      // {lat,lng} of null (dan geldt huidige locatie)
-  var waypoints = [];          // array van {lat,lng}
-  var destinationLatLng = null;
-  var pendingPick = null;      // null | 'start' | 'waypoint' | 'destination'
+  var routePoints = [];        // array van {lat,lng}; routePoints[0] is altijd het startpunt
+  var closeLoop = false;       // true = route wordt automatisch teruggetrokken naar het startpunt
+  var quickDestination = null; // {lat,lng} — alleen gebruikt buiten planningsmodus (tik = bestemming vanaf huidige locatie)
   var currentRouteInfoText = null;
   var currentLegsInfo = null; // array van {from, to, km} tussen opeenvolgende punten
   var currentElevationInfo = null; // {gain, loss} in meters, voor de hele route
@@ -454,9 +454,8 @@
   var routeRequestSeq = 0;
 
   var routeLine = L.polyline([], { color:'#ffb020', weight:5, opacity:0.9, dashArray:'2 10', lineCap:'round' }).addTo(map);
-  var startMarker = null;
-  var destinationMarker = null;
-  var waypointMarkers = [];
+  var routeMarkers = [];    // parallel aan routePoints
+  var quickDestMarker = null;
 
   function pinIcon(color){
     return L.divIcon({
@@ -470,51 +469,70 @@
     return L.divIcon({ className:'', iconSize:[26,26], iconAnchor:[13,13], html:'<div class="wp-pin">' + n + '</div>' });
   }
 
-  function bindPointMarker(marker, label, onDelete){
-    marker.bindPopup('<div>' + label + '<br><button class="popupDeleteBtn">🗑️ Verwijderen</button></div>');
-    marker.on('contextmenu', function(){ marker.openPopup(); });
+  // Popup-inhoud wordt vlak vóór openen opgebouwd (via getLabel/allowLoopToggle), zodat
+  // de rondje-knoptekst altijd de actuele closeLoop-status toont, ook na wijzigingen elders.
+  function attachPointPopup(marker, getLabel, onDelete, allowLoopToggle){
+    marker.bindPopup('');
+    marker.on('contextmenu', function(){
+      var loopBtnHtml = allowLoopToggle() ?
+        ('<button class="popupLoopBtn">' + (closeLoop ? '🔁 Rondje uitschakelen' : '🔁 Eindpunt is startpunt') + '</button>') : '';
+      marker.setPopupContent('<div>' + getLabel() + loopBtnHtml + '<button class="popupDeleteBtn">🗑️ Verwijderen</button></div>');
+      marker.openPopup();
+    });
     marker.on('popupopen', function(e){
-      var btn = e.popup.getElement().querySelector('.popupDeleteBtn');
-      if(btn){ btn.addEventListener('click', function(){ marker.closePopup(); onDelete(); }); }
+      var el = e.popup.getElement();
+      var delBtn = el.querySelector('.popupDeleteBtn');
+      if(delBtn){ delBtn.addEventListener('click', function(){ marker.closePopup(); onDelete(); }); }
+      var loopBtn = el.querySelector('.popupLoopBtn');
+      if(loopBtn){ loopBtn.addEventListener('click', function(){
+        marker.closePopup();
+        closeLoop = !closeLoop;
+        calculateRoute();
+        refreshPlanBar();
+      }); }
     });
   }
 
-  function removeWaypointAt(i){
-    waypoints.splice(i, 1);
-    redrawWaypointMarkers();
-    renderWaypointList();
+  function removePointAt(i){
+    routePoints.splice(i, 1);
+    redrawRouteMarkers();
+    renderPointList();
     calculateRoute();
   }
 
-  function redrawWaypointMarkers(){
-    waypointMarkers.forEach(function(m){ map.removeLayer(m); });
-    waypointMarkers = waypoints.map(function(wp, i){
-      var m = L.marker([wp.lat, wp.lng], { icon: waypointIcon(i+1), zIndexOffset: 800, draggable: true }).addTo(map);
+  function redrawRouteMarkers(){
+    routeMarkers.forEach(function(m){ map.removeLayer(m); });
+    routeMarkers = routePoints.map(function(pt, i){
+      var isStart = (i === 0);
+      var m = L.marker([pt.lat, pt.lng], { icon: isStart ? startIcon : waypointIcon(i), zIndexOffset: isStart ? 850 : 800, draggable: true }).addTo(map);
       m.on('dragend', function(e){
         var ll = e.target.getLatLng();
-        waypoints[i] = { lat: ll.lat, lng: ll.lng };
+        routePoints[i] = { lat: ll.lat, lng: ll.lng };
         calculateRoute();
       });
-      bindPointMarker(m, 'Tussenpunt ' + (i+1), function(){ removeWaypointAt(i); });
+      attachPointPopup(
+        m,
+        function(){ return i === 0 ? 'Start' : 'Punt ' + i; },
+        function(){ removePointAt(i); },
+        function(){ return routePoints.length >= 2; }
+      );
       return m;
     });
   }
 
-  function renderWaypointList(){
+  function renderPointList(){
     var listEl = document.getElementById('waypointList');
     listEl.innerHTML = '';
-    waypoints.forEach(function(wp, i){
+    routePoints.forEach(function(pt, i){
       var chip = document.createElement('div');
       chip.className = 'waypoint-chip';
-      chip.innerHTML = '<span><span class="num">' + (i+1) + '</span>Tussenpunt ' + (i+1) + '</span><span class="rm" data-i="' + i + '">✕</span>';
+      var label = (i === 0) ? 'Start' : ('Punt ' + i);
+      chip.innerHTML = '<span><span class="num">' + (i+1) + '</span>' + label + '</span><span class="rm" data-i="' + i + '">✕</span>';
       listEl.appendChild(chip);
     });
     listEl.querySelectorAll('.rm').forEach(function(el){
       el.addEventListener('click', function(){
-        waypoints.splice(parseInt(el.getAttribute('data-i'), 10), 1);
-        redrawWaypointMarkers();
-        renderWaypointList();
-        calculateRoute();
+        removePointAt(parseInt(el.getAttribute('data-i'), 10));
       });
     });
   }
@@ -536,38 +554,45 @@
     calculateRoute();
   });
 
-  // ---------- Planningsmodus aan/uit ----------
+  // ---------- Planningsmodus aan/uit (schakelt alleen de interactiemodus, behoudt de getekende route) ----------
   var chkPlanning = document.getElementById('chkPlanning');
+  var chkLoop = document.getElementById('chkLoop');
   var planningControls = document.getElementById('planningControls');
   var planningHint = document.getElementById('planningHint');
   function refreshPlanningUI(){
     chkPlanning.checked = planningEnabled;
     planningControls.style.display = planningEnabled ? 'block' : 'none';
     planningHint.style.display = planningEnabled ? 'none' : 'block';
-    document.getElementById('btnUseCurrentStart').style.display = customStart ? 'block' : 'none';
+    chkLoop.checked = closeLoop;
     refreshPlanBar();
   }
   chkPlanning.addEventListener('change', function(){
     planningEnabled = chkPlanning.checked;
     settings.planningEnabled = planningEnabled;
     saveSettings(settings);
-    pendingPick = null;
     refreshPlanningUI();
     if(planningEnabled) closeDrawer();
+  });
+  chkLoop.addEventListener('change', function(){
+    if(routePoints.length < 2){
+      showToast('Minstens 2 punten nodig voor een rondje');
+      chkLoop.checked = false;
+      return;
+    }
+    closeLoop = chkLoop.checked;
+    calculateRoute();
+    refreshPlanBar();
   });
 
   // ---------- Zwevende plan-balk op de kaart (alleen zichtbaar tijdens routeplanning) ----------
   var planbarEl = document.getElementById('planbar');
   function refreshPlanBar(){
     planbarEl.classList.toggle('show', planningEnabled);
-    document.getElementById('pbStart').classList.toggle('armed', pendingPick === 'start');
-    document.getElementById('pbWaypoint').classList.toggle('armed', pendingPick === 'waypoint');
-    document.getElementById('pbDestination').classList.toggle('armed', pendingPick === 'destination');
+    document.getElementById('pbLoop').classList.toggle('armed', closeLoop);
     var hint = document.getElementById('planbarHint');
-    if(pendingPick === 'start'){ hint.textContent = 'Tik op de kaart voor het startpunt'; }
-    else if(pendingPick === 'waypoint'){ hint.textContent = 'Tik op de kaart voor tussenpunt ' + (waypoints.length+1); }
-    else if(pendingPick === 'destination'){ hint.textContent = 'Tik op de kaart voor de bestemming'; }
-    else { hint.textContent = waypoints.length ? (waypoints.length + ' tussenpunt' + (waypoints.length>1?'en':'') + ' gekozen') : 'Kies wat je wilt instellen'; }
+    hint.textContent = routePoints.length ?
+      (routePoints.length + ' punt' + (routePoints.length>1?'en':'') + ' gekozen — tik voor nog een punt') :
+      'Tik op de kaart voor je startpunt';
 
     var distEl = document.getElementById('planbarDist');
     if(currentLegsInfo && currentLegsInfo.length){
@@ -579,12 +604,14 @@
       distEl.textContent = '';
     }
   }
-  document.getElementById('pbStart').addEventListener('click', function(){ armPick('start', 'startpunt kiezen'); });
-  document.getElementById('pbWaypoint').addEventListener('click', function(){ armPick('waypoint', 'tussenpunt ' + (waypoints.length+1) + ' toevoegen'); });
-  document.getElementById('pbDestination').addEventListener('click', function(){ armPick('destination', 'bestemming kiezen'); });
+  document.getElementById('pbLoop').addEventListener('click', function(){
+    if(routePoints.length < 2){ showToast('Minstens 2 punten nodig voor een rondje'); return; }
+    closeLoop = !closeLoop;
+    calculateRoute();
+    refreshPlanBar();
+  });
   document.getElementById('pbFinish').addEventListener('click', function(){
     planningEnabled = false;
-    pendingPick = null;
     settings.planningEnabled = false;
     saveSettings(settings);
     refreshPlanningUI();
@@ -592,38 +619,14 @@
   });
   refreshPlanningUI();
 
-  function armPick(target, label){
-    pendingPick = target;
-    closeDrawer();
-    refreshPlanBar();
-    showToast('Tik op de kaart: ' + label);
-  }
-  document.getElementById('btnPickStart').addEventListener('click', function(){
-    armPick('start', 'startpunt kiezen');
-  });
-  document.getElementById('btnUseCurrentStart').addEventListener('click', function(){
-    customStart = null;
-    if(startMarker){ map.removeLayer(startMarker); startMarker = null; }
-    refreshPlanningUI();
-    calculateRoute();
-  });
-  document.getElementById('btnAddWaypoint').addEventListener('click', function(){
-    armPick('waypoint', 'tussenpunt ' + (waypoints.length+1) + ' toevoegen');
-  });
-  document.getElementById('btnPickDestination').addEventListener('click', function(){
-    armPick('destination', 'bestemming kiezen');
-  });
-
   function clearRoute(){
-    customStart = null;
-    waypoints = [];
-    destinationLatLng = null;
-    pendingPick = null;
+    routePoints = [];
+    closeLoop = false;
+    quickDestination = null;
     routeLine.setLatLngs([]);
-    if(startMarker){ map.removeLayer(startMarker); startMarker = null; }
-    if(destinationMarker){ map.removeLayer(destinationMarker); destinationMarker = null; }
-    redrawWaypointMarkers();
-    renderWaypointList();
+    if(quickDestMarker){ map.removeLayer(quickDestMarker); quickDestMarker = null; }
+    redrawRouteMarkers();
+    renderPointList();
     currentRouteInfoText = null;
     currentLegsInfo = null;
     currentElevationInfo = null;
@@ -633,27 +636,39 @@
   document.getElementById('btnClearRoute').addEventListener('click', clearRoute);
 
   function calculateRoute(){
-    var originPoint = customStart ? customStart : (lastFix ? { lat: lastFix.latitude, lng: lastFix.longitude } : null);
-    var routeWaypoints = planningEnabled ? waypoints : [];
-    var hasDestination = !!destinationLatLng;
-    var points = [originPoint].concat(routeWaypoints);
-    if(hasDestination){ points.push(destinationLatLng); }
+    var points, pointLabel;
 
-    if(!originPoint || points.length < 2){
-      routeLine.setLatLngs([]);
-      currentRouteInfoText = null;
-      currentLegsInfo = null;
-      currentElevationInfo = null;
-      updateStats();
-      refreshPlanBar();
-      return;
+    if(planningEnabled){
+      if(routePoints.length < 2){
+        routeLine.setLatLngs([]);
+        currentRouteInfoText = null;
+        currentLegsInfo = null;
+        currentElevationInfo = null;
+        updateStats();
+        refreshPlanBar();
+        return;
+      }
+      points = routePoints.slice();
+      if(closeLoop){ points.push(routePoints[0]); }
+      pointLabel = function(idx){
+        if(idx === 0) return 'Start';
+        if(closeLoop && idx === points.length - 1) return 'Terug bij start';
+        return 'Punt ' + idx;
+      };
+    } else {
+      if(!lastFix || !quickDestination){
+        routeLine.setLatLngs([]);
+        currentRouteInfoText = null;
+        currentLegsInfo = null;
+        currentElevationInfo = null;
+        updateStats();
+        refreshPlanBar();
+        return;
+      }
+      points = [{ lat: lastFix.latitude, lng: lastFix.longitude }, quickDestination];
+      pointLabel = function(idx){ return idx === 0 ? 'Start' : 'Bestemming'; };
     }
 
-    function pointLabel(idx){
-      if(idx === 0) return 'Start';
-      if(hasDestination && idx === points.length - 1) return 'Bestemming';
-      return 'Tussenpunt ' + idx;
-    }
     var mySeq = ++routeRequestSeq;
     var prof = ROUTE_PROFILES[travelMode];
     var coordStr = points.map(function(p){ return p.lng + ',' + p.lat; }).join(';');
@@ -675,9 +690,8 @@
       var km = (route.distance/1000).toFixed(route.distance >= 10000 ? 0 : 1);
       var mins = Math.round(route.duration/60);
       var tijd = mins >= 60 ? (Math.floor(mins/60) + 'u ' + (mins%60) + 'm') : (mins + ' min');
-      var viaTxt = (planningEnabled && routeWaypoints.length) ? (' via ' + routeWaypoints.length + ' tussenpunt' + (routeWaypoints.length>1?'en':'')) : '';
-      var voorlopigTxt = hasDestination ? '' : ' — nog geen bestemming gekozen';
-      currentRouteInfoText = km + ' km · ' + tijd + ' (' + prof.label + viaTxt + ')' + voorlopigTxt;
+      var loopTxt = (planningEnabled && closeLoop) ? ' — rondje' : '';
+      currentRouteInfoText = km + ' km · ' + tijd + ' (' + prof.label + loopTxt + ')';
 
       currentLegsInfo = (route.legs || []).map(function(leg, i){
         return {
@@ -698,8 +712,8 @@
     });
   }
 
-  // Hoogtemeters (omhoog/omlaag) ophalen via een gratis hoogtedienst, op basis van
-  // de daadwerkelijke routegeometrie (met SRTM-achtige resolutie, dus een benadering)
+  // Hoogtemeters (omhoog/omlaag) ophalen via Open-Meteo, op basis van
+  // de daadwerkelijke routegeometrie (90m-resolutie, dus een benadering)
   function fetchElevationInfo(routeCoords, mySeq){
     var MAX_SAMPLES = 60;
     var sampled = routeCoords;
@@ -734,68 +748,42 @@
   }
 
   map.on('click', function(e){
-    if(pendingPick === 'start'){
-      customStart = { lat: e.latlng.lat, lng: e.latlng.lng };
-      if(startMarker){
-        startMarker.setLatLng(e.latlng);
-      } else {
-        startMarker = L.marker(e.latlng, { icon: startIcon, zIndexOffset: 850, draggable: true }).addTo(map);
-        startMarker.on('dragend', function(ev){
-          var ll = ev.target.getLatLng();
-          customStart = { lat: ll.lat, lng: ll.lng };
-          calculateRoute();
-        });
-        bindPointMarker(startMarker, 'Startpunt', function(){
-          customStart = null;
-          map.removeLayer(startMarker);
-          startMarker = null;
-          refreshPlanningUI();
-          calculateRoute();
-        });
-      }
-      pendingPick = null;
-      refreshPlanningUI();
-      calculateRoute();
-      return;
-    }
-    if(pendingPick === 'waypoint'){
-      waypoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
-      redrawWaypointMarkers();
-      renderWaypointList();
-      pendingPick = null;
+    if(planningEnabled){
+      routePoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
+      redrawRouteMarkers();
+      renderPointList();
       refreshPlanBar();
       calculateRoute();
       return;
     }
-    if(pendingPick === 'destination' || !planningEnabled){
-      if(!lastFix && !customStart){
-        showToast('Wacht op locatie voordat je een bestemming kiest');
-        return;
-      }
-      destinationLatLng = { lat: e.latlng.lat, lng: e.latlng.lng };
-      if(destinationMarker){
-        destinationMarker.setLatLng(e.latlng);
-      } else {
-        destinationMarker = L.marker(e.latlng, { icon: destIcon, zIndexOffset: 900, draggable: true }).addTo(map);
-        destinationMarker.on('dragend', function(ev){
-          var ll = ev.target.getLatLng();
-          destinationLatLng = { lat: ll.lat, lng: ll.lng };
-          calculateRoute();
-        });
-        bindPointMarker(destinationMarker, 'Bestemming', function(){
-          destinationLatLng = null;
-          map.removeLayer(destinationMarker);
-          destinationMarker = null;
-          calculateRoute();
-        });
-      }
-      pendingPick = null;
-      refreshPlanBar();
-      calculateRoute();
+    // Buiten planningsmodus: tik = snelle bestemming vanaf je huidige locatie
+    if(!lastFix){
+      showToast('Wacht op locatie voordat je een bestemming kiest');
       return;
     }
-    // planningEnabled true, geen pendingPick: negeer losse taps zodat je niet per ongeluk iets verplaatst
-    showToast('Kies eerst een actie (startpunt, tussenpunt of bestemming)');
+    quickDestination = { lat: e.latlng.lat, lng: e.latlng.lng };
+    if(quickDestMarker){
+      quickDestMarker.setLatLng(e.latlng);
+    } else {
+      quickDestMarker = L.marker(e.latlng, { icon: destIcon, zIndexOffset: 900, draggable: true }).addTo(map);
+      quickDestMarker.on('dragend', function(ev){
+        var ll = ev.target.getLatLng();
+        quickDestination = { lat: ll.lat, lng: ll.lng };
+        calculateRoute();
+      });
+      attachPointPopup(
+        quickDestMarker,
+        function(){ return 'Bestemming'; },
+        function(){
+          quickDestination = null;
+          map.removeLayer(quickDestMarker);
+          quickDestMarker = null;
+          calculateRoute();
+        },
+        function(){ return false; }
+      );
+    }
+    calculateRoute();
   });
 
   var hasCentered = false;
@@ -898,8 +886,9 @@
       }
     }
 
-    // Route herberekenen zolang er geen los startpunt is gekozen (route volgt dan je huidige positie)
-    if(!customStart && (destinationLatLng || (planningEnabled && waypoints.length))){ calculateRoute(); }
+    // Buiten planningsmodus volgt de route je live positie (snelle bestemming); tijdens
+    // planning zijn punten bewust vastgezet en bewegen ze niet mee met je locatie.
+    if(!planningEnabled && quickDestination){ calculateRoute(); }
 
     updateStats();
   }
@@ -992,7 +981,7 @@
     }
   });
 
-  renderWaypointList();
+  renderPointList();
   updateStats();
   setInterval(updateStats, 1000);
 
