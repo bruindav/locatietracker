@@ -1,4 +1,4 @@
-<!-- Fix: Routeplanning vereenvoudigd — gewoon punten aantikken (eerste is altijd start), plus een 'rondje'-optie via lange druk die de route automatisch terugtrekt naar het startpunt (branch fix-17) -->
+<!-- Fix: Kompas-fallback voor de richtingpijl volledig verwijderd (kon naar noorden wijzen i.p.v. looprichting); vaste noord-indicator toegevoegd; pijl knippert rood bij afwijking van de routerichting (branch fix-18) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -170,6 +170,19 @@
     transform-origin:9px 30px;
     filter:drop-shadow(0 0 2px rgba(0,0,0,0.6));
   }
+  .me-arrow.wrongway{
+    border-bottom-color:var(--danger);
+    animation:arrowBlink 0.8s infinite;
+  }
+  @keyframes arrowBlink{ 0%,100%{ opacity:1; } 50%{ opacity:0.25; } }
+  .north-badge{
+    position:absolute; left:14px; bottom:20px; z-index:1000;
+    width:44px; height:44px; border-radius:50%; background:rgba(22,29,36,0.92); border:1px solid var(--border);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text);
+    box-shadow:0 4px 14px rgba(0,0,0,0.45); font-size:10px; font-weight:700; line-height:1.1;
+    pointer-events:none;
+  }
+  .north-badge .arrow{ font-size:16px; line-height:1; }
   .pin{ width:30px; height:42px; }
   .wp-pin{
     width:26px; height:26px; border-radius:50%; background:var(--accent); color:#04131f;
@@ -206,6 +219,7 @@
 </div>
 
 <button class="fab-center" id="btnCenter" aria-label="Centreren">📍</button>
+<div class="north-badge" aria-hidden="true"><span class="arrow">↑</span><span>N</span></div>
 
 <div class="planbar" id="planbar">
   <div class="hint2" id="planbarHint">Tik op de kaart voor je startpunt</div>
@@ -280,7 +294,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-17';
+  var APP_VERSION = 'fix-18';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -450,6 +464,7 @@
   var currentRouteInfoText = null;
   var currentLegsInfo = null; // array van {from, to, km} tussen opeenvolgende punten
   var currentElevationInfo = null; // {gain, loss} in meters, voor de hele route
+  var currentRouteCoordsForCheck = null; // laatst getekende routegeometrie, voor de richtingscontrole
   var elevationRequestSeq = 0;
   var routeRequestSeq = 0;
 
@@ -630,6 +645,7 @@
     currentRouteInfoText = null;
     currentLegsInfo = null;
     currentElevationInfo = null;
+    currentRouteCoordsForCheck = null;
     refreshPlanningUI();
     updateStats();
   }
@@ -644,6 +660,7 @@
         currentRouteInfoText = null;
         currentLegsInfo = null;
         currentElevationInfo = null;
+        currentRouteCoordsForCheck = null;
         updateStats();
         refreshPlanBar();
         return;
@@ -661,6 +678,7 @@
         currentRouteInfoText = null;
         currentLegsInfo = null;
         currentElevationInfo = null;
+        currentRouteCoordsForCheck = null;
         updateStats();
         refreshPlanBar();
         return;
@@ -687,6 +705,7 @@
       var route = data.routes[0];
       var coords = route.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
       routeLine.setLatLngs(coords);
+      currentRouteCoordsForCheck = coords;
       var km = (route.distance/1000).toFixed(route.distance >= 10000 ? 0 : 1);
       var mins = Math.round(route.duration/60);
       var tijd = mins >= 60 ? (Math.floor(mins/60) + 'u ' + (mins%60) + 'm') : (mins + ' min');
@@ -810,6 +829,32 @@
     if(arrow){ arrow.style.transform = 'rotate(' + deg + 'deg)'; }
   }
 
+  function setArrowWarning(on){
+    var arrow = meMarker.getElement() && meMarker.getElement().querySelector('.me-arrow');
+    if(arrow){ arrow.classList.toggle('wrongway', on); }
+  }
+
+  // Zoekt de dichtstbijzijnde routegeometrie bij (lat,lng) en geeft de richting (bearing)
+  // van dat stukje route terug, om te vergelijken met de werkelijke looprichting.
+  function nearestRouteBearing(lat, lng){
+    var coords = currentRouteCoordsForCheck;
+    if(!coords || coords.length < 2) return null;
+    var bestIdx = 0, bestDist = Infinity;
+    for(var i = 0; i < coords.length; i++){
+      var d = map.distance([lat,lng], coords[i]);
+      if(d < bestDist){ bestDist = d; bestIdx = i; }
+    }
+    var segStart, segEnd;
+    if(bestIdx >= coords.length - 1){ segStart = coords[coords.length-2]; segEnd = coords[coords.length-1]; }
+    else { segStart = coords[bestIdx]; segEnd = coords[bestIdx+1]; }
+    return bearingDeg(segStart[0], segStart[1], segEnd[0], segEnd[1]);
+  }
+
+  function angularDiff(a, b){
+    var d = Math.abs(a - b) % 360;
+    return d > 180 ? 360 - d : d;
+  }
+
   function fmtCoord(v){ return v.toFixed(5); }
   function fmtSpeed(mps){
     if(mps == null || isNaN(mps)) return '–';
@@ -827,7 +872,7 @@
   function updateStats(){
     var dist = trackDistanceMeters();
     var distTxt = dist >= 1000 ? (dist/1000).toFixed(2)+' km' : Math.round(dist)+' m';
-    var bron = usingRecentMovementHeading() ? 'looprichting (GPS)' : 'kompas (stilstand)';
+    var bron = usingRecentMovementHeading() ? 'looprichting (GPS)' : 'laatst bekend (stilstaan)';
 
     document.getElementById('trackStat').innerHTML =
       'Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b>';
@@ -869,6 +914,15 @@
     }
     lastFixLatLng = latlng;
 
+    // Waarschuwen (rood knipperend pijltje) als je duidelijk een andere kant op beweegt
+    // dan de getekende route op dit punt — alleen zinvol met een betrouwbare, verse looprichting.
+    if(usingRecentMovementHeading()){
+      var routeBearing = nearestRouteBearing(c.latitude, c.longitude);
+      setArrowWarning(routeBearing != null && angularDiff(currentHeading, routeBearing) > 90);
+    } else {
+      setArrowWarning(false);
+    }
+
     if(!hasCentered){
       map.setView(latlng, 17);
       hasCentered = true;
@@ -904,39 +958,6 @@
   } else {
     document.getElementById('statusBadge').textContent = 'Geolocatie niet ondersteund';
   }
-
-  // Kompas-richting (device orientation) — alleen als fallback wanneer er geen recente looprichting uit GPS bekend is
-  // (bijv. bij stilstaan), zodat de pijl niet de fysieke telefoonrichting toont terwijl je loopt
-  function onOrientation(e){
-    if(usingRecentMovementHeading()) return;
-    var heading = null;
-    if(typeof e.webkitCompassHeading === 'number'){
-      heading = e.webkitCompassHeading; // iOS: al t.o.v. noord
-    } else if(e.alpha != null){
-      heading = 360 - e.alpha; // Android/overig: benadering
-    }
-    if(heading != null && !isNaN(heading)){
-      currentHeading = heading;
-      setArrowRotation(currentHeading);
-    }
-  }
-
-  function enableCompass(){
-    if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
-      DeviceOrientationEvent.requestPermission().then(function(state){
-        if(state === 'granted'){
-          window.addEventListener('deviceorientation', onOrientation, true);
-        }
-      }).catch(function(){});
-    } else if('ondeviceorientationabsolute' in window){
-      window.addEventListener('deviceorientationabsolute', onOrientation, true);
-    } else {
-      window.addEventListener('deviceorientation', onOrientation, true);
-    }
-  }
-  // Compass vraagt op iOS om een gebruikersactie; koppel aan eerste tik op de kaart
-  document.body.addEventListener('click', enableCompass, { once: true });
-  enableCompass();
 
   // ---------- Bediening ----------
   document.getElementById('btnCenter').addEventListener('click', function(){
