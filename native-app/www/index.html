@@ -1,4 +1,5 @@
-<!-- Fix: native-app/www snapshot bijgewerkt t/m fix-19 (was fix-13-snapshot) — bevat nu ook fix-14 t/m fix-19: draggable/verwijderbare routepunten, hoogtemeters, vereenvoudigd routemodel (tik=punt, lang-druk=rondje), kompas verwijderd + rode afwijkingswaarschuwing (branch fix-20) -->
+<!-- Fix: hook voor achtergrondlocatie-plugin toegevoegd (alleen actief in de native app;
+     op de website valt dit automatisch terug op de gewone browser-locatie, ongewijzigd) (branch fix-21) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -290,11 +291,15 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<!-- Fix: pluginbundel voor achtergrondlocatie — bestaat alleen in de native-app build
+     (gegenereerd met "npm run build:plugins"); ontbreekt op de website en faalt dan
+     stil, zonder de rest van de app te breken (branch fix-21) -->
+<script src="js/capacitor-plugins.js" onerror="this.remove()"></script>
 <script>
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-19';
+  var APP_VERSION = 'fix-21';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -899,7 +904,45 @@
     document.getElementById('statusBadge').innerHTML = '<b>Geen locatie</b> · ' + (err.message || 'controleer toestemming');
   }
 
-  if('geolocation' in navigator){
+  // Fix: op de native app (Capacitor) gebruiken we de background-geolocation-plugin,
+  // zodat locatie-updates ook doorkomen als het scherm uit staat of de app op de
+  // achtergrond draait; hier op de website bestaat window.Capacitor niet, dus dit
+  // blijft gewoon de browser-API, exact zoals voorheen (branch fix-21).
+  var bgWatcherId = null;
+  function startBackgroundLocationWatcher(){
+    window.CapPlugins.BackgroundGeolocation.addWatcher({
+      backgroundMessage: 'Locatietracker volgt je route.',
+      backgroundTitle: 'Locatietracker actief',
+      requestPermissions: true,
+      stale: false,
+      distanceFilter: 3
+    }, function(location, error){
+      if(error){
+        if(error.code === 'NOT_AUTHORIZED'){
+          showError('Locatietoestemming geweigerd. Zet toestemming aan bij Instellingen → Apps → Locatietracker → Machtigingen → Locatie ("Altijd toestaan" voor tracking op de achtergrond).');
+        } else {
+          onPositionError(error);
+        }
+        return;
+      }
+      // Vertaal het plugin-locatieobject naar dezelfde vorm als de browser-Geolocation-API
+      // ({coords:{...}}), zodat de rest van de app (onPosition) ongewijzigd blijft.
+      onPosition({
+        coords: {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracy: location.accuracy,
+          speed: location.speed,
+          heading: location.bearing
+        }
+      });
+    }).then(function(id){ bgWatcherId = id; });
+  }
+
+  if(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() &&
+     window.CapPlugins && window.CapPlugins.BackgroundGeolocation){
+    startBackgroundLocationWatcher();
+  } else if('geolocation' in navigator){
     navigator.geolocation.watchPosition(onPosition, onPositionError, {
       enableHighAccuracy: true, maximumAge: 1000, timeout: 15000
     });

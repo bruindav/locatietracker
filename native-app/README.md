@@ -1,4 +1,5 @@
-<!-- Fix: www/-snapshot bijgewerkt t/m fix-19, status hieronder aangepast (branch fix-20) -->
+<!-- Fix: achtergrondlocatie-plugin, AndroidManifest-rechten en eigen app-icoon toegevoegd —
+     alle drie de "nog te doen"-punten uit fix-13/fix-20 zijn nu afgerond (branch fix-21) -->
 # Locatietracker — native Android-app (Capacitor)
 
 Dit is een kant-en-klaar Capacitor-project dat de webversie (`www/`, een kopie
@@ -10,7 +11,14 @@ klaar; hieronder de stappen die je op je eigen laptop nog moet zetten.
 - `www/` — kopie van de webversie, bijgewerkt t/m **fix-19** (route plannen door
   punten te tikken, punten verplaatsen/verwijderen via lang-druk, hoogtemeters,
   looprichting-pijl zonder kompas + rode waarschuwing bij afwijking)
-- `android/` — volledig gegenereerd Android Studio-project
+- `android/` — volledig gegenereerd Android Studio-project, inclusief:
+  - **Achtergrondlocatie** via `@capacitor-community/background-geolocation`
+    (blijft locatie doorgeven met het scherm uit of de app op de achtergrond,
+    met verplichte permanente melding "Locatietracker actief")
+  - De bijbehorende rechten in `AndroidManifest.xml` (fijne locatie,
+    achtergrondlocatie, foreground-service, meldingen)
+  - Een **eigen app-icoon** (adaptive icon, navy met het kaartje/wandelaar-logo)
+    en bijpassend opstartscherm, gegenereerd uit `icons/icon-512.png`
 
 ## Benodigdheden (eenmalig installeren)
 1. [Node.js](https://nodejs.org) (LTS-versie)
@@ -20,9 +28,10 @@ klaar; hieronder de stappen die je op je eigen laptop nog moet zetten.
 
 ```bash
 cd native-app
-npm install          # installeert Capacitor (staat al in package.json)
-npx cap sync android # zorgt dat android/ up-to-date is met www/
-npx cap open android # opent het project in Android Studio
+npm install            # installeert Capacitor + de background-geolocation-plugin
+npm run build:plugins  # bundelt de plugin-JS naar www/js/capacitor-plugins.js
+npx cap sync android   # zorgt dat android/ up-to-date is met www/
+npx cap open android   # opent het project in Android Studio
 ```
 
 In Android Studio:
@@ -30,23 +39,26 @@ In Android Studio:
 2. Sluit je telefoon aan via USB met "USB-debugging" aan (Instellingen → Over
    telefoon → 7x op buildnummer tikken → Ontwikkelaarsopties → USB-debugging)
 3. Klik op ▶ Run — de app installeert en start direct op je telefoon
+4. Bij de eerste keer tracken vraagt Android om locatietoestemming — kies
+   **"Toestaan tijdens gebruik"** en zet 'm daarna handmatig op **"Altijd
+   toestaan"** via Instellingen → Apps → Locatietracker → Machtigingen →
+   Locatie, anders stopt het volgen zodra je het scherm uit doet
 
 Dat is voor een test-installatie voldoende. Play Store is niet nodig.
 
-## Nog te doen zodra je hier verder gaat
-- **Achtergrondlocatie**: een plugin toevoegen zoals `@capgo/background-geolocation`
-  of `@capacitor-community/background-geolocation`, en de trackingcode in
-  `www/index.html` omzetten van `navigator.geolocation.watchPosition` naar de
-  plugin's watcher. Android vereist dan een permanente melding zolang er wordt
-  getrackt (verplicht vanaf Android 8+).
-- Rechten toevoegen in `android/app/src/main/AndroidManifest.xml`:
-  `ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE`,
-  `FOREGROUND_SERVICE_LOCATION` (verplicht vanaf Android 14).
-- Eigen app-icoon voor Android (adaptive icon) genereren uit `icons/icon-512.png`,
-  bijvoorbeeld met de Capacitor Assets-tool (`npx @capacitor/assets generate`).
+## Let op bij de volgende keer dat je www/ bijwerkt
+Kopieer je opnieuw `index.html`, `manifest.json`, `favicon.ico` en `icons/`
+vanuit de hoofdmap van de repo naar `native-app/www/` (zoals eerder): de
+achtergrondlocatie-hook zit inmiddels **ook al in de hoofdmap-versie** van
+`index.html` (onschadelijk op de website — valt daar automatisch terug op de
+gewone browserlocatie), dus een simpele kopie is genoeg. Draai daarna nog wel
+`npx cap sync android` om de wijzigingen door te voeren naar het Android-project;
+`npm run build:plugins` hoeft alleen opnieuw als de plugin zelf wordt bijgewerkt.
 
-## Belangrijk: www/ bijwerken
-`www/` is nu een momentopname van de webversie. Zodra je hier verdergaat, kopieer
-je de laatste `index.html`, `manifest.json`, `favicon.ico` en `icons/` opnieuw
-vanuit de hoofdmap van de repo naar `native-app/www/`, en draai dan
-`npx cap sync android` om de wijzigingen door te voeren naar het Android-project.
+## Mogelijke vervolgstappen
+- Android vraagt sinds versie 11 een **losse bevestiging** voor "Altijd
+  toestaan"-locatietoegang; dat kun je met de plugin niet automatisch afdwingen,
+  alleen duidelijk uitleggen (zie stap 4 hierboven).
+- Batterijoptimalisatie van de telefoon kan achtergrond-tracking na verloop
+  van tijd toch pauzeren; instellen op "Niet optimaliseren" voor Locatietracker
+  voorkomt dat.
