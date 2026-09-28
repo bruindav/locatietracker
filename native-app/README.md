@@ -1,3 +1,4 @@
+<!-- Fix: www/-snapshot bijgewerkt t/m fix-19, status hieronder aangepast (branch fix-20) -->
 # Locatietracker — native Android-app (Capacitor)
 
 Dit is een kant-en-klaar Capacitor-project dat de webversie (`www/`, een kopie
@@ -6,7 +7,9 @@ klaar; hieronder de stappen die je op je eigen laptop nog moet zetten.
 
 ## Wat hier al klaarstaat
 - `capacitor.config.ts` — app-id `nl.bruindav.locatietracker`, appnaam "Locatietracker"
-- `www/` — kopie van de huidige webversie (index.html, manifest, iconen)
+- `www/` — kopie van de webversie, bijgewerkt t/m **fix-19** (route plannen door
+  punten te tikken, punten verplaatsen/verwijderen via lang-druk, hoogtemeters,
+  looprichting-pijl zonder kompas + rode waarschuwing bij afwijking)
 - `android/` — volledig gegenereerd Android Studio-project
 
 ## Benodigdheden (eenmalig installeren)
