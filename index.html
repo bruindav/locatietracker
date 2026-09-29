@@ -1,5 +1,6 @@
-<!-- Fix: routes en sporen kunnen nu met een naam worden opgeslagen (datum automatisch)
-     en later weer geladen of verwijderd, via een nieuwe sectie in het menu (branch fix-24) -->
+<!-- Fix: kaart volgt positie alleen nog automatisch mee tijdens het tracken, niet meer
+     tijdens het plannen van een route (anders kon je geen route buiten je huidige
+     locatie plannen, want de kaart sprong steeds terug) (branch fix-25) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -325,7 +326,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-24';
+  var APP_VERSION = 'fix-25';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1153,11 +1154,11 @@
     if(!hasCentered){
       map.setView(latlng, 17);
       hasCentered = true;
-    } else {
-      // Fix: kaart volgt mee zodra je richting de rand van het zichtbare gebied
-      // loopt, zodat je positie altijd in beeld blijft — herpositioneert alleen
-      // als dat nodig is, dus vrij rondkijken op de kaart blijft mogelijk zolang
-      // je positie nog ruim binnen beeld valt (branch fix-22).
+    } else if(isTracking){
+      // Fix: kaart volgt alleen mee tijdens het opnemen van een spoor, zodat je
+      // positie altijd in beeld blijft. Buiten het tracken (bijv. tijdens het
+      // plannen van een route) blijft de kaart met rust, anders kun je geen
+      // route tekenen op een stuk kaart buiten je huidige locatie (branch fix-25).
       recenterIfNearEdge(latlng);
     }
 
