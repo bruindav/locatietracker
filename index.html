@@ -1,6 +1,5 @@
-<!-- Fix: sprong-filter tegen GPS-kaatsing onder bomen/dicht bladerdak — een fix die een
-     onwaarschijnlijke snelheid impliceert wordt pas in het spoor opgenomen als de
-     volgende fix de beweging bevestigt, anders stilzwijgend genegeerd (branch fix-23) -->
+<!-- Fix: routes en sporen kunnen nu met een naam worden opgeslagen (datum automatisch)
+     en later weer geladen of verwijderd, via een nieuwe sectie in het menu (branch fix-24) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -154,6 +153,19 @@
     color:#04131f; font-weight:700; font-size:11px; margin-right:8px;
   }
   .waypoint-chip .rm{ color:var(--danger); cursor:pointer; font-weight:700; padding:2px 6px; }
+  /* Fix: opgeslagen routes/sporen-lijst (branch fix-24) */
+  .saved-item{
+    background:var(--panel); border:1px solid var(--border); border-radius:9px;
+    padding:8px 10px; margin-bottom:8px;
+  }
+  .saved-item .saved-title{ font-size:13px; font-weight:700; display:flex; align-items:center; gap:6px; }
+  .saved-item .saved-meta{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .saved-item .saved-actions{ display:flex; gap:8px; margin-top:8px; }
+  .saved-item .saved-actions button{
+    flex:1; border:1px solid var(--border); background:var(--bg); color:var(--text);
+    padding:6px 8px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .saved-item .saved-actions button.del{ color:var(--danger); border-color:var(--danger); }
   .stat-line{ font-size:13px; color:var(--muted); margin-bottom:6px; line-height:1.5; }
   .stat-line b{ color:var(--text); }
   .hint{ font-size:12px; color:var(--muted); margin-top:4px; line-height:1.4; }
@@ -286,6 +298,16 @@
     <div class="stat-line" id="legStat"></div>
   </section>
 
+  <!-- Fix: bibliotheek met opgeslagen routes/sporen — opslaan met naam, datum erbij,
+       later weer laden of verwijderen (branch fix-24) -->
+  <section>
+    <h2>Opgeslagen routes &amp; sporen</h2>
+    <button class="dbtn" id="btnSaveRoute">💾 Huidige route opslaan</button>
+    <button class="dbtn" id="btnSaveTrack" style="margin-top:8px;">💾 Huidig spoor opslaan</button>
+    <div class="hint" style="margin-top:8px;">De datum wordt automatisch bij het opslaan vastgelegd.</div>
+    <div id="savedList" style="margin-top:10px;"></div>
+  </section>
+
   <section>
     <h2>Locatie &amp; richting</h2>
     <div class="stat-line" id="locStat"></div>
@@ -303,7 +325,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-23';
+  var APP_VERSION = 'fix-24';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -383,6 +405,7 @@
   // ---------- Opslag ----------
   var STORAGE_KEY = "locatietracker.track.v1";
   var STORAGE_SETTINGS = "locatietracker.settings.v1";
+  var STORAGE_SAVED = "locatietracker.saved.v1"; // Fix: bibliotheek met opgeslagen routes/sporen (branch fix-24)
 
   function loadTrack(){
     try{
@@ -402,10 +425,20 @@
   function saveSettings(s){
     try{ localStorage.setItem(STORAGE_SETTINGS, JSON.stringify(s)); }catch(e){}
   }
+  function loadSavedItems(){
+    try{
+      var raw = localStorage.getItem(STORAGE_SAVED);
+      return raw ? JSON.parse(raw) : [];
+    }catch(e){ return []; }
+  }
+  function saveSavedItems(list){
+    try{ localStorage.setItem(STORAGE_SAVED, JSON.stringify(list)); }catch(e){}
+  }
 
   var settings = loadSettings();
   var track = loadTrack();
   var isTracking = !!settings.isTracking;
+  var savedItems = loadSavedItems(); // Fix: {id,type:'route'|'track',name,savedAt,data} (branch fix-24)
 
   // Fix: GPS-fixes die een onwaarschijnlijke sprong impliceren (vaak GPS-kaatsing
   // onder bomen/dicht bladerdak, zoals tussen Bilthoven en Bosch en Duin) worden
@@ -761,6 +794,155 @@
       // Stil falen: hoogte-info is een aanvulling, geen kritiek onderdeel van de route
     });
   }
+
+  // ---------- Fix: bibliotheek met opgeslagen routes en sporen (branch fix-24) ----------
+  function fmtSavedDate(iso){
+    var d = new Date(iso);
+    var dagen = ['zo','ma','di','wo','do','vr','za'];
+    var pad = function(n){ return (n < 10 ? '0' : '') + n; };
+    return dagen[d.getDay()] + ' ' + pad(d.getDate()) + '-' + pad(d.getMonth()+1) + '-' + d.getFullYear() +
+      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function renderSavedList(){
+    var listEl = document.getElementById('savedList');
+    listEl.innerHTML = '';
+    if(savedItems.length === 0){
+      listEl.innerHTML = '<div class="hint">Nog niets opgeslagen.</div>';
+      return;
+    }
+    // Nieuwste eerst
+    var sorted = savedItems.slice().sort(function(a,b){ return b.savedAt.localeCompare(a.savedAt); });
+    sorted.forEach(function(item){
+      var el = document.createElement('div');
+      el.className = 'saved-item';
+      var icon = item.type === 'route' ? '🧭' : '🟢';
+      var typeLabel = item.type === 'route' ? 'Route' : 'Spoor';
+      var meta = '';
+      if(item.type === 'route'){
+        var n = item.data.routePoints.length;
+        meta = n + ' punt' + (n === 1 ? '' : 'en') + (item.data.closeLoop ? ' · rondje' : '') +
+          ' · ' + (ROUTE_PROFILES[item.data.travelMode] ? ROUTE_PROFILES[item.data.travelMode].label : '');
+      } else {
+        meta = item.data.track.length + ' punten';
+      }
+      el.innerHTML =
+        '<div class="saved-title">' + icon + ' ' + escapeHtml(item.name) + '</div>' +
+        '<div class="saved-meta">' + typeLabel + ' · ' + fmtSavedDate(item.savedAt) + ' · ' + meta + '</div>' +
+        '<div class="saved-actions">' +
+          '<button class="load">📂 Laden</button>' +
+          '<button class="del">🗑️ Verwijderen</button>' +
+        '</div>';
+      el.querySelector('.load').addEventListener('click', function(){ loadSavedItem(item.id); });
+      el.querySelector('.del').addEventListener('click', function(){ deleteSavedItem(item.id); });
+      listEl.appendChild(el);
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  document.getElementById('btnSaveRoute').addEventListener('click', function(){
+    if(routePoints.length < 2){
+      showToast('Plan eerst een route (minstens 2 punten)');
+      return;
+    }
+    var naam = prompt('Naam voor deze route:', 'Route ' + fmtSavedDate(new Date().toISOString()));
+    if(!naam) return;
+    savedItems.push({
+      id: 'r' + Date.now(),
+      type: 'route',
+      name: naam,
+      savedAt: new Date().toISOString(),
+      data: {
+        routePoints: routePoints.map(function(p){ return { lat: p.lat, lng: p.lng }; }),
+        closeLoop: closeLoop,
+        travelMode: travelMode
+      }
+    });
+    saveSavedItems(savedItems);
+    renderSavedList();
+    showToast('Route "' + naam + '" opgeslagen');
+  });
+
+  document.getElementById('btnSaveTrack').addEventListener('click', function(){
+    if(track.length === 0){
+      showToast('Er is nog geen spoor om op te slaan');
+      return;
+    }
+    var naam = prompt('Naam voor dit spoor:', 'Spoor ' + fmtSavedDate(new Date().toISOString()));
+    if(!naam) return;
+    savedItems.push({
+      id: 't' + Date.now(),
+      type: 'track',
+      name: naam,
+      savedAt: new Date().toISOString(),
+      data: { track: track.slice() }
+    });
+    saveSavedItems(savedItems);
+    renderSavedList();
+    showToast('Spoor "' + naam + '" opgeslagen');
+  });
+
+  function loadSavedItem(id){
+    var item = savedItems.filter(function(it){ return it.id === id; })[0];
+    if(!item) return;
+    if(item.type === 'route'){
+      routePoints = item.data.routePoints.map(function(p){ return { lat: p.lat, lng: p.lng }; });
+      closeLoop = !!item.data.closeLoop;
+      if(item.data.travelMode && ROUTE_PROFILES[item.data.travelMode]){
+        travelMode = item.data.travelMode;
+        settings.travelMode = travelMode;
+        saveSettings(settings);
+        updateModeButtons();
+      }
+      planningToolsVisible = true;
+      settings.planningEnabled = true;
+      saveSettings(settings);
+      redrawRouteMarkers();
+      renderPointList();
+      refreshPlanningUI();
+      calculateRoute();
+      if(routePoints.length){
+        map.setView([routePoints[0].lat, routePoints[0].lng], Math.max(map.getZoom(), 15));
+      }
+      closeDrawer();
+      showToast('Route "' + item.name + '" geladen');
+    } else {
+      if(isTracking){
+        isTracking = false;
+        settings.isTracking = false;
+        saveSettings(settings);
+        refreshTrackButton();
+      }
+      track = item.data.track.map(function(p){ return { lat: p.lat, lng: p.lng, t: p.t }; });
+      pendingOutlier = null;
+      saveTrack(track);
+      polyline.setLatLngs(track.map(function(p){ return [p.lat, p.lng]; }));
+      routeLine.bringToFront();
+      updateStats();
+      if(track.length){
+        map.setView([track[0].lat, track[0].lng], Math.max(map.getZoom(), 15));
+      }
+      closeDrawer();
+      showToast('Spoor "' + item.name + '" geladen (opnemen is gepauzeerd)');
+    }
+  }
+
+  function deleteSavedItem(id){
+    var item = savedItems.filter(function(it){ return it.id === id; })[0];
+    if(!item) return;
+    if(!confirm('"' + item.name + '" verwijderen? Dit kan niet ongedaan worden gemaakt.')) return;
+    savedItems = savedItems.filter(function(it){ return it.id !== id; });
+    saveSavedItems(savedItems);
+    renderSavedList();
+    showToast('Verwijderd');
+  }
+
+  renderSavedList();
 
   // Elke tik op de kaart voegt een punt toe aan de route — altijd, ongeacht of de
   // plan-hulpmiddelen zichtbaar zijn. Zo bestaat er maar één, voorspelbaar routemodel.
