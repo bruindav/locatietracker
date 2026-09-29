@@ -1,5 +1,5 @@
-<!-- Fix: hook voor achtergrondlocatie-plugin toegevoegd (alleen actief in de native app;
-     op de website valt dit automatisch terug op de gewone browser-locatie, ongewijzigd) (branch fix-21) -->
+<!-- Fix: pijl heeft nu 3 kleurstanden (blauw/oranje/rood i.p.v. blauw/rood), en de kaart
+     volgt automatisch mee zodra je positie de rand van het zichtbare gebied nadert (branch fix-22) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -171,6 +171,9 @@
     transform-origin:9px 30px;
     filter:drop-shadow(0 0 2px rgba(0,0,0,0.6));
   }
+  .me-arrow.ontrack{
+    border-bottom-color:var(--warn);
+  }
   .me-arrow.wrongway{
     border-bottom-color:var(--danger);
     animation:arrowBlink 0.8s infinite;
@@ -299,7 +302,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-21';
+  var APP_VERSION = 'fix-22';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -785,9 +788,15 @@
     if(arrow){ arrow.style.transform = 'rotate(' + deg + 'deg)'; }
   }
 
-  function setArrowWarning(on){
+  // Fix: drie kleurstanden i.p.v. alleen aan/uit — blauw (neutraal, geen
+  // betrouwbare vergelijking mogelijk), oranje ("ontrack", je loopt in de
+  // richting van de route) en rood-knipperend ("wrongway", duidelijk de
+  // verkeerde kant op) (branch fix-22)
+  function setArrowState(state){
     var arrow = meMarker.getElement() && meMarker.getElement().querySelector('.me-arrow');
-    if(arrow){ arrow.classList.toggle('wrongway', on); }
+    if(!arrow) return;
+    arrow.classList.toggle('ontrack', state === 'ontrack');
+    arrow.classList.toggle('wrongway', state === 'wrongway');
   }
 
   // Zoekt de dichtstbijzijnde routegeometrie bij (lat,lng) en geeft de richting (bearing)
@@ -845,6 +854,24 @@
       'Pijl: <b>' + bron + '</b>';
   }
 
+  // Fix: herpositioneert de kaart zodra je positie te dicht bij de rand van het
+  // zichtbare gebied komt (binnen ~15% marge), zodat je nooit "van de kaart af
+  // loopt". Zolang je ruim binnen beeld blijft, wordt er niets aangepast, dus
+  // handmatig scrollen/inzoomen om de kaart te bekijken blijft gewoon werken (branch fix-22).
+  function recenterIfNearEdge(latlng){
+    var bounds = map.getBounds();
+    var latSpan = bounds.getNorth() - bounds.getSouth();
+    var lngSpan = bounds.getEast() - bounds.getWest();
+    var margin = 0.15;
+    var innerBounds = L.latLngBounds(
+      [bounds.getSouth() + latSpan * margin, bounds.getWest() + lngSpan * margin],
+      [bounds.getNorth() - latSpan * margin, bounds.getEast() - lngSpan * margin]
+    );
+    if(!innerBounds.contains(latlng)){
+      map.panTo(latlng, { animate: true, duration: 0.5 });
+    }
+  }
+
   function onPosition(pos){
     var c = pos.coords;
     lastFix = c;
@@ -870,18 +897,29 @@
     }
     lastFixLatLng = latlng;
 
-    // Waarschuwen (rood knipperend pijltje) als je duidelijk een andere kant op beweegt
-    // dan de getekende route op dit punt — alleen zinvol met een betrouwbare, verse looprichting.
+    // Pijlkleur t.o.v. de geplande route — alleen zinvol met een betrouwbare, verse
+    // looprichting: oranje zolang je richting redelijk overeenkomt met de route,
+    // rood-knipperend zodra je duidelijk de andere kant op loopt.
     if(usingRecentMovementHeading()){
       var routeBearing = nearestRouteBearing(c.latitude, c.longitude);
-      setArrowWarning(routeBearing != null && angularDiff(currentHeading, routeBearing) > 90);
+      if(routeBearing != null){
+        setArrowState(angularDiff(currentHeading, routeBearing) > 90 ? 'wrongway' : 'ontrack');
+      } else {
+        setArrowState('neutral');
+      }
     } else {
-      setArrowWarning(false);
+      setArrowState('neutral');
     }
 
     if(!hasCentered){
       map.setView(latlng, 17);
       hasCentered = true;
+    } else {
+      // Fix: kaart volgt mee zodra je richting de rand van het zichtbare gebied
+      // loopt, zodat je positie altijd in beeld blijft — herpositioneert alleen
+      // als dat nodig is, dus vrij rondkijken op de kaart blijft mogelijk zolang
+      // je positie nog ruim binnen beeld valt (branch fix-22).
+      recenterIfNearEdge(latlng);
     }
 
     document.getElementById('statusBadge').innerHTML = '<b>Locatie actief</b> · ' + fmtCoord(c.latitude) + ', ' + fmtCoord(c.longitude);
