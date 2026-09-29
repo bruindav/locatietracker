@@ -1,5 +1,6 @@
-<!-- Fix: pijl heeft nu 3 kleurstanden (blauw/oranje/rood i.p.v. blauw/rood), en de kaart
-     volgt automatisch mee zodra je positie de rand van het zichtbare gebied nadert (branch fix-22) -->
+<!-- Fix: sprong-filter tegen GPS-kaatsing onder bomen/dicht bladerdak — een fix die een
+     onwaarschijnlijke snelheid impliceert wordt pas in het spoor opgenomen als de
+     volgende fix de beweging bevestigt, anders stilzwijgend genegeerd (branch fix-23) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -302,7 +303,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-22';
+  var APP_VERSION = 'fix-23';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -405,6 +406,13 @@
   var settings = loadSettings();
   var track = loadTrack();
   var isTracking = !!settings.isTracking;
+
+  // Fix: GPS-fixes die een onwaarschijnlijke sprong impliceren (vaak GPS-kaatsing
+  // onder bomen/dicht bladerdak, zoals tussen Bilthoven en Bosch en Duin) worden
+  // niet direct in het spoor opgenomen, maar pas nadat de VOLGENDE fix bevestigt
+  // dat de beweging echt is — zo niet, dan wordt de sprong genegeerd (branch fix-23).
+  var pendingOutlier = null;
+  var MAX_PLAUSIBLE_SPEED_MPS = { foot: 6, bike: 14, car: 45 }; // ruime marge boven realistische snelheid
 
   try{
 
@@ -872,6 +880,55 @@
     }
   }
 
+  // Fix: voegt een GPS-fix toe aan het spoor, met een eenvoudig "sprong-filter"
+  // tegen GPS-kaatsing onder bomen/dicht bladerdak. Een fix die een onwaarschijnlijk
+  // hoge snelheid t.o.v. het vorige punt impliceert wordt niet meteen opgenomen,
+  // maar bewaard als pendingOutlier; pas als de VOLGENDE fix daar geloofwaardig op
+  // aansluit (dus echt beweging is, geen losse uitschieter) worden beide punten
+  // alsnog toegevoegd. Sluit de volgende fix niet aan, dan wordt de sprong
+  // stilzwijgend genegeerd en gaat het spoor gewoon verder vanaf het laatste
+  // goede punt (branch fix-23).
+  function addTrackFix(lat, lng, t){
+    var last = track[track.length-1];
+    if(!last){
+      track.push({ lat: lat, lng: lng, t: t });
+      pendingOutlier = null;
+      polyline.setLatLngs(track.map(function(p){return [p.lat,p.lng];}));
+      saveTrack(track);
+      routeLine.bringToFront();
+      return;
+    }
+
+    var candidate = { lat: lat, lng: lng, t: t };
+    var from = pendingOutlier || last;
+    var dist = map.distance([candidate.lat, candidate.lng], [from.lat, from.lng]);
+
+    if(dist < 3){
+      // Nauwelijks verplaatsing t.o.v. het referentiepunt — als er een pending
+      // uitschieter was, bleek die dus een vals alarm dat vanzelf weer verdween.
+      pendingOutlier = null;
+      return;
+    }
+
+    var dtSeconds = Math.max(0.001, (t - from.t) / 1000);
+    var speed = dist / dtSeconds;
+    var maxSpeed = MAX_PLAUSIBLE_SPEED_MPS[travelMode] || 14;
+
+    if(speed <= maxSpeed){
+      if(pendingOutlier){
+        track.push(pendingOutlier);
+        pendingOutlier = null;
+      }
+      track.push(candidate);
+      polyline.setLatLngs(track.map(function(p){return [p.lat,p.lng];}));
+      saveTrack(track);
+      routeLine.bringToFront();
+    } else {
+      // Onwaarschijnlijke sprong — nog niet vertrouwen, pas bij bevestiging opnemen.
+      pendingOutlier = candidate;
+    }
+  }
+
   function onPosition(pos){
     var c = pos.coords;
     lastFix = c;
@@ -925,14 +982,7 @@
     document.getElementById('statusBadge').innerHTML = '<b>Locatie actief</b> · ' + fmtCoord(c.latitude) + ', ' + fmtCoord(c.longitude);
 
     if(isTracking){
-      var last = track[track.length-1];
-      var moved = !last || map.distance(latlng, [last.lat,last.lng]) >= 3; // min. 3m tussen punten
-      if(moved){
-        track.push({ lat: c.latitude, lng: c.longitude, t: Date.now() });
-        polyline.setLatLngs(track.map(function(p){return [p.lat,p.lng];}));
-        saveTrack(track);
-        routeLine.bringToFront(); // route-lijn boven het spoor houden
-      }
+      addTrackFix(c.latitude, c.longitude, Date.now());
     }
 
     updateStats();
@@ -1014,6 +1064,7 @@
   btnTrack.addEventListener('click', function(){
     isTracking = !isTracking;
     settings.isTracking = isTracking;
+    pendingOutlier = null; // niet laten meeslepen tussen pauzeren/hervatten
     saveSettings(settings);
     refreshTrackButton();
     requestWakeLock();
@@ -1024,6 +1075,7 @@
     if(track.length === 0) return;
     if(confirm('Gevolgde route wissen? Dit kan niet ongedaan worden gemaakt.')){
       track = [];
+      pendingOutlier = null;
       polyline.setLatLngs([]);
       saveTrack(track);
       updateStats();
