@@ -1,6 +1,6 @@
-<!-- Fix: kaart volgt positie alleen nog automatisch mee tijdens het tracken, niet meer
-     tijdens het plannen van een route (anders kon je geen route buiten je huidige
-     locatie plannen, want de kaart sprong steeds terug) (branch fix-25) -->
+<!-- Fix: opslaan-dialoog met naam, datum en vervoerswijze (i.p.v. window.prompt, dat
+     geen datum kon tonen en in de native Android-WebView onbetrouwbaar bleek); een
+     spoor onthoudt nu ook zijn vervoerswijze i.p.v. altijd "wandelspoor" (branch fix-26) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -167,6 +167,29 @@
     padding:6px 8px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer;
   }
   .saved-item .saved-actions button.del{ color:var(--danger); border-color:var(--danger); }
+  /* Fix: opslaan-dialoog met naam, datum en vervoerswijze (branch fix-26) */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2100;
+    display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;
+    opacity:0; pointer-events:none; transition:opacity 0.15s;
+  }
+  .modal-backdrop.show{ opacity:1; pointer-events:auto; }
+  .modal-card{
+    background:var(--panel2); border:1px solid var(--border); border-radius:14px;
+    padding:16px; width:min(360px,100%); box-sizing:border-box;
+  }
+  .modal-card h3{ margin:0 0 12px 0; font-size:15px; }
+  .modal-card label{ display:block; font-size:12px; color:var(--muted); margin:10px 0 4px 0; }
+  .modal-card input[type=text], .modal-card input[type=date]{
+    width:100%; background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:10px; padding:9px 10px; font-size:14px; box-sizing:border-box;
+  }
+  .modal-actions{ display:flex; gap:8px; margin-top:16px; }
+  .modal-actions button{
+    flex:1; border:1px solid var(--border); background:var(--panel); color:var(--text);
+    padding:10px 12px; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .modal-actions button.primary{ background:var(--accent); border-color:var(--accent); color:#04131f; }
   .stat-line{ font-size:13px; color:var(--muted); margin-bottom:6px; line-height:1.5; }
   .stat-line b{ color:var(--text); }
   .hint{ font-size:12px; color:var(--muted); margin-top:4px; line-height:1.4; }
@@ -268,7 +291,7 @@
   </section>
 
   <section>
-    <h2>Wandelspoor</h2>
+    <h2>Spoor</h2>
     <button class="dbtn primary" id="btnTrack">▶️ Start spoor</button>
     <button class="dbtn danger" id="btnClear">🗑️ Wis spoor</button>
     <div class="stat-line" id="trackStat" style="margin-top:10px;"></div>
@@ -317,6 +340,27 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Fix: opslaan-dialoog met naam, datum en vervoerswijze, voor zowel route als spoor (branch fix-26) -->
+<div class="modal-backdrop" id="saveModalBackdrop">
+  <div class="modal-card">
+    <h3 id="saveModalTitle">Opslaan</h3>
+    <label for="saveModalName">Naam</label>
+    <input type="text" id="saveModalName">
+    <label for="saveModalDate">Datum</label>
+    <input type="date" id="saveModalDate">
+    <label>Vervoerswijze</label>
+    <div class="modebar" id="saveModalMode">
+      <button type="button" class="modebtn" data-mode="foot" title="Lopen">🚶</button>
+      <button type="button" class="modebtn" data-mode="bike" title="Fietsen">🚴</button>
+      <button type="button" class="modebtn" data-mode="car" title="Rijden">🚗</button>
+    </div>
+    <div class="modal-actions">
+      <button type="button" id="saveModalCancel">Annuleren</button>
+      <button type="button" id="saveModalConfirm" class="primary">Opslaan</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <!-- Fix: pluginbundel voor achtergrondlocatie — bestaat alleen in de native-app build
      (gegenereerd met "npm run build:plugins"); ontbreekt op de website en faalt dan
@@ -326,7 +370,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-25';
+  var APP_VERSION = 'fix-26';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -819,13 +863,14 @@
       el.className = 'saved-item';
       var icon = item.type === 'route' ? '🧭' : '🟢';
       var typeLabel = item.type === 'route' ? 'Route' : 'Spoor';
+      var modeLabel = ROUTE_PROFILES[item.data.travelMode] ? ROUTE_PROFILES[item.data.travelMode].label : '';
       var meta = '';
       if(item.type === 'route'){
         var n = item.data.routePoints.length;
         meta = n + ' punt' + (n === 1 ? '' : 'en') + (item.data.closeLoop ? ' · rondje' : '') +
-          ' · ' + (ROUTE_PROFILES[item.data.travelMode] ? ROUTE_PROFILES[item.data.travelMode].label : '');
+          (modeLabel ? (' · ' + modeLabel) : '');
       } else {
-        meta = item.data.track.length + ' punten';
+        meta = item.data.track.length + ' punten' + (modeLabel ? (' · ' + modeLabel) : '');
       }
       el.innerHTML =
         '<div class="saved-title">' + icon + ' ' + escapeHtml(item.name) + '</div>' +
@@ -846,27 +891,87 @@
     });
   }
 
+  // Fix: eigen opslaan-dialoog (i.p.v. window.prompt, dat in de native Android-
+  // WebView geen datumveld kan tonen en daar onbetrouwbaar bleek) met een naam-,
+  // datum- en vervoerswijze-veld, voor zowel route als spoor (branch fix-26).
+  var saveModalBackdrop = document.getElementById('saveModalBackdrop');
+  var saveModalTitle = document.getElementById('saveModalTitle');
+  var saveModalName = document.getElementById('saveModalName');
+  var saveModalDate = document.getElementById('saveModalDate');
+  var saveModalModeBar = document.getElementById('saveModalMode');
+  var saveModalSelectedMode = travelMode;
+  var saveModalOnConfirm = null;
+
+  function pad2(n){ return (n < 10 ? '0' : '') + n; }
+
+  function updateSaveModalModeButtons(){
+    saveModalModeBar.querySelectorAll('.modebtn').forEach(function(btn){
+      btn.classList.toggle('active', btn.getAttribute('data-mode') === saveModalSelectedMode);
+    });
+  }
+  saveModalModeBar.addEventListener('click', function(e){
+    var btn = e.target.closest('.modebtn');
+    if(!btn) return;
+    saveModalSelectedMode = btn.getAttribute('data-mode');
+    updateSaveModalModeButtons();
+  });
+
+  function openSaveModal(title, defaultName, mode, onConfirm){
+    saveModalTitle.textContent = title;
+    saveModalName.value = defaultName;
+    var now = new Date();
+    saveModalDate.value = now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate());
+    saveModalSelectedMode = mode;
+    updateSaveModalModeButtons();
+    saveModalOnConfirm = onConfirm;
+    saveModalBackdrop.classList.add('show');
+    setTimeout(function(){ saveModalName.focus(); saveModalName.select(); }, 50);
+  }
+  function closeSaveModal(){
+    saveModalBackdrop.classList.remove('show');
+    saveModalOnConfirm = null;
+  }
+  document.getElementById('saveModalCancel').addEventListener('click', closeSaveModal);
+  saveModalBackdrop.addEventListener('click', function(e){
+    if(e.target === saveModalBackdrop) closeSaveModal();
+  });
+  document.getElementById('saveModalConfirm').addEventListener('click', function(){
+    var naam = saveModalName.value.trim();
+    if(!naam){ showToast('Geef een naam op'); return; }
+    var now = new Date();
+    var datumVal = saveModalDate.value; // yyyy-mm-dd
+    // Datum van het veld + huidige tijd combineren, zodat sortering (nieuwste eerst)
+    // ook binnen één dag blijft kloppen.
+    var savedAt = datumVal ?
+      (datumVal + 'T' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds())) :
+      now.toISOString();
+    var mode = saveModalSelectedMode;
+    var cb = saveModalOnConfirm;
+    closeSaveModal();
+    if(cb) cb(naam, savedAt, mode);
+  });
+
   document.getElementById('btnSaveRoute').addEventListener('click', function(){
     if(routePoints.length < 2){
       showToast('Plan eerst een route (minstens 2 punten)');
       return;
     }
-    var naam = prompt('Naam voor deze route:', 'Route ' + fmtSavedDate(new Date().toISOString()));
-    if(!naam) return;
-    savedItems.push({
-      id: 'r' + Date.now(),
-      type: 'route',
-      name: naam,
-      savedAt: new Date().toISOString(),
-      data: {
-        routePoints: routePoints.map(function(p){ return { lat: p.lat, lng: p.lng }; }),
-        closeLoop: closeLoop,
-        travelMode: travelMode
-      }
+    openSaveModal('Route opslaan', 'Route ' + fmtSavedDate(new Date().toISOString()), travelMode, function(naam, savedAt, mode){
+      savedItems.push({
+        id: 'r' + Date.now(),
+        type: 'route',
+        name: naam,
+        savedAt: savedAt,
+        data: {
+          routePoints: routePoints.map(function(p){ return { lat: p.lat, lng: p.lng }; }),
+          closeLoop: closeLoop,
+          travelMode: mode
+        }
+      });
+      saveSavedItems(savedItems);
+      renderSavedList();
+      showToast('Route "' + naam + '" opgeslagen');
     });
-    saveSavedItems(savedItems);
-    renderSavedList();
-    showToast('Route "' + naam + '" opgeslagen');
   });
 
   document.getElementById('btnSaveTrack').addEventListener('click', function(){
@@ -874,18 +979,18 @@
       showToast('Er is nog geen spoor om op te slaan');
       return;
     }
-    var naam = prompt('Naam voor dit spoor:', 'Spoor ' + fmtSavedDate(new Date().toISOString()));
-    if(!naam) return;
-    savedItems.push({
-      id: 't' + Date.now(),
-      type: 'track',
-      name: naam,
-      savedAt: new Date().toISOString(),
-      data: { track: track.slice() }
+    openSaveModal('Spoor opslaan', 'Spoor ' + fmtSavedDate(new Date().toISOString()), travelMode, function(naam, savedAt, mode){
+      savedItems.push({
+        id: 't' + Date.now(),
+        type: 'track',
+        name: naam,
+        savedAt: savedAt,
+        data: { track: track.slice(), travelMode: mode }
+      });
+      saveSavedItems(savedItems);
+      renderSavedList();
+      showToast('Spoor "' + naam + '" opgeslagen');
     });
-    saveSavedItems(savedItems);
-    renderSavedList();
-    showToast('Spoor "' + naam + '" opgeslagen');
   });
 
   function loadSavedItem(id){
@@ -921,6 +1026,12 @@
       }
       track = item.data.track.map(function(p){ return { lat: p.lat, lng: p.lng, t: p.t }; });
       pendingOutlier = null;
+      if(item.data.travelMode && ROUTE_PROFILES[item.data.travelMode]){
+        travelMode = item.data.travelMode;
+        settings.travelMode = travelMode;
+        saveSettings(settings);
+        updateModeButtons();
+      }
       saveTrack(track);
       polyline.setLatLngs(track.map(function(p){ return [p.lat, p.lng]; }));
       routeLine.bringToFront();
