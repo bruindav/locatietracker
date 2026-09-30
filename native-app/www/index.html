@@ -1,6 +1,8 @@
-<!-- Fix: opslaan-dialoog met naam, datum en vervoerswijze (i.p.v. window.prompt, dat
-     geen datum kon tonen en in de native Android-WebView onbetrouwbaar bleek); een
-     spoor onthoudt nu ook zijn vervoerswijze i.p.v. altijd "wandelspoor" (branch fix-26) -->
+<!-- Fix: pijltje-kleur met meer marge en hysterese (30m grens op het dichtstbijzijnde
+     routepunt + verschillende drempels om oranje/rood in en uit te gaan), zodat een
+     lus/haarspeldbocht in de route niet meer voor valse kleurwissels zorgt; plus een
+     bedieningsbalk op het hoofdscherm om het spoor te pauzeren/hervatten of te stoppen,
+     met bij stoppen meteen de vraag om het spoor op te slaan (branch fix-27) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -83,6 +85,26 @@
   .planbtn.armed{ background:var(--warn); border-color:var(--warn); color:#2a1900; }
   .planbtn.finish{ background:var(--accent2); border-color:var(--accent2); color:#04220f; }
   .planbar .hint2{ font-size:12px; color:var(--muted); text-align:center; }
+
+  /* ---------- Fix: bedieningsbalk voor het spoor op het hoofdscherm (branch fix-27) ---------- */
+  .trackbar{
+    position:absolute; left:12px; right:12px; bottom:92px; z-index:1000;
+    display:none; align-items:center; justify-content:space-between; gap:10px;
+    background:rgba(22,29,36,0.95); border:1px solid var(--border); border-radius:14px;
+    padding:10px 12px; box-shadow:0 4px 16px rgba(0,0,0,0.4);
+  }
+  .trackbar.show{ display:flex; }
+  .trackbar-info{ display:flex; align-items:center; gap:8px; min-width:0; }
+  .trackbar-title{ font-size:13px; font-weight:700; color:var(--text); }
+  .trackbar-dist{ font-size:12px; color:var(--muted); }
+  .trackbar.paused #trackbarIcon{ filter:grayscale(1); opacity:0.7; }
+  .trackbar-actions{ display:flex; gap:8px; flex:0 0 auto; }
+  .trackbar-actions button{
+    width:42px; height:42px; border-radius:50%; border:1px solid var(--border);
+    background:var(--panel2); color:var(--text); font-size:17px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .trackbar-actions button.stop{ background:var(--danger); border-color:var(--danger); color:#2a0000; }
 
   /* ---------- Zijmenu (drawer) ---------- */
   .drawer-backdrop{
@@ -262,6 +284,22 @@
 <button class="fab-center" id="btnCenter" aria-label="Centreren">📍</button>
 <div class="north-badge" aria-hidden="true"><span class="arrow">↑</span><span>N</span></div>
 
+<!-- Fix: bedieningsbalk voor het spoor op het hoofdscherm — pauzeren/hervatten en
+     stoppen zonder eerst het menu te hoeven openen (branch fix-27) -->
+<div class="trackbar" id="trackbar">
+  <div class="trackbar-info">
+    <span id="trackbarIcon">🔴</span>
+    <div>
+      <div class="trackbar-title" id="trackbarTitle">Opname loopt</div>
+      <div class="trackbar-dist" id="trackbarDist"></div>
+    </div>
+  </div>
+  <div class="trackbar-actions">
+    <button id="btnTrackPauseFab" title="Pauzeer/hervat">⏸️</button>
+    <button id="btnTrackStopFab" class="stop" title="Stop">⏹️</button>
+  </div>
+</div>
+
 <div class="planbar" id="planbar">
   <div class="hint2" id="planbarHint">Tik op de kaart voor je startpunt</div>
   <div class="hint2" id="planbarDist" style="color:var(--text); font-weight:600;"></div>
@@ -370,7 +408,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-26';
+  var APP_VERSION = 'fix-27';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -974,7 +1012,9 @@
     });
   });
 
-  document.getElementById('btnSaveTrack').addEventListener('click', function(){
+  // Fix: herbruikbaar gemaakt zodat zowel de knop in het menu als de "Stop"-actie
+  // op het hoofdscherm dezelfde opslaan-vraag kunnen tonen (branch fix-27).
+  function promptSaveTrack(){
     if(track.length === 0){
       showToast('Er is nog geen spoor om op te slaan');
       return;
@@ -991,7 +1031,8 @@
       renderSavedList();
       showToast('Spoor "' + naam + '" opgeslagen');
     });
-  });
+  }
+  document.getElementById('btnSaveTrack').addEventListener('click', promptSaveTrack);
 
   function loadSavedItem(id){
     var item = savedItems.filter(function(it){ return it.id === id; })[0];
@@ -1036,6 +1077,7 @@
       polyline.setLatLngs(track.map(function(p){ return [p.lat, p.lng]; }));
       routeLine.bringToFront();
       updateStats();
+      refreshTrackButton();
       if(track.length){
         map.setView([track[0].lat, track[0].lng], Math.max(map.getZoom(), 15));
       }
@@ -1067,6 +1109,7 @@
   });
 
   var hasCentered = false;
+  var lastArrowState = 'neutral'; // Fix: voor hysterese in de pijlkleur (branch fix-27)
   var currentHeading = 0;
   var lastFix = null;
   var lastFixLatLng = null;
@@ -1103,6 +1146,12 @@
 
   // Zoekt de dichtstbijzijnde routegeometrie bij (lat,lng) en geeft de richting (bearing)
   // van dat stukje route terug, om te vergelijken met de werkelijke looprichting.
+  // Fix: bij een route die dicht bij zichzelf terugvouwt (lus/rondje) kon het
+  // dichtstbijzijnde punt per ongeluk op een heel ander stuk van de route liggen
+  // (met een compleet andere richting) zodra je een paar meter opzij liep. Daarom
+  // nu een maximumafstand: ver van elk routepunt vandaan geeft geen kleur meer
+  // (neutraal) in plaats van een willekeurige/foutieve vergelijking (branch fix-27).
+  var ROUTE_MATCH_MAX_DIST_M = 30;
   function nearestRouteBearing(lat, lng){
     var coords = currentRouteCoordsForCheck;
     if(!coords || coords.length < 2) return null;
@@ -1111,6 +1160,7 @@
       var d = map.distance([lat,lng], coords[i]);
       if(d < bestDist){ bestDist = d; bestIdx = i; }
     }
+    if(bestDist > ROUTE_MATCH_MAX_DIST_M) return null;
     var segStart, segEnd;
     if(bestIdx >= coords.length - 1){ segStart = coords[coords.length-2]; segEnd = coords[coords.length-1]; }
     else { segStart = coords[bestIdx]; segEnd = coords[bestIdx+1]; }
@@ -1190,6 +1240,7 @@
       polyline.setLatLngs(track.map(function(p){return [p.lat,p.lng];}));
       saveTrack(track);
       routeLine.bringToFront();
+      refreshTrackButton(); // Fix: eerste punt — trackbar op hoofdscherm laten verschijnen (branch fix-27)
       return;
     }
 
@@ -1250,15 +1301,23 @@
 
     // Pijlkleur t.o.v. de geplande route — alleen zinvol met een betrouwbare, verse
     // looprichting: oranje zolang je richting redelijk overeenkomt met de route,
-    // rood-knipperend zodra je duidelijk de andere kant op loopt.
+    // rood-knipperend zodra je duidelijk de andere kant op loopt. Fix: ruimere marge
+    // en hysterese (verschillende drempel om rood IN te gaan dan om er weer UIT te
+    // gaan), zodat de kleur niet heen en weer flikkert bij normale GPS-ruis of een
+    // paar meter naast de route lopen (branch fix-27).
     if(usingRecentMovementHeading()){
       var routeBearing = nearestRouteBearing(c.latitude, c.longitude);
       if(routeBearing != null){
-        setArrowState(angularDiff(currentHeading, routeBearing) > 90 ? 'wrongway' : 'ontrack');
+        var diff = angularDiff(currentHeading, routeBearing);
+        var threshold = (lastArrowState === 'wrongway') ? 100 : 120;
+        lastArrowState = diff > threshold ? 'wrongway' : 'ontrack';
+        setArrowState(lastArrowState);
       } else {
+        lastArrowState = 'neutral';
         setArrowState('neutral');
       }
     } else {
+      lastArrowState = 'neutral';
       setArrowState('neutral');
     }
 
@@ -1342,6 +1401,10 @@
   });
 
   var btnTrack = document.getElementById('btnTrack');
+  var trackbar = document.getElementById('trackbar');
+  var trackbarIcon = document.getElementById('trackbarIcon');
+  var trackbarTitle = document.getElementById('trackbarTitle');
+  var trackbarDist = document.getElementById('trackbarDist');
   function refreshTrackButton(){
     if(isTracking){
       btnTrack.textContent = '⏸️ Pauzeer spoor';
@@ -1352,10 +1415,22 @@
       btnTrack.classList.remove('recording');
       btnTrack.classList.add('primary');
     }
+    // Fix: bedieningsbalk op het hoofdscherm meenemen — alleen zichtbaar zodra
+    // er een spoor is, met een eigen gepauzeerd-uiterlijk (branch fix-27)
+    if(track.length > 0){
+      trackbar.classList.add('show');
+      trackbar.classList.toggle('paused', !isTracking);
+      trackbarIcon.textContent = isTracking ? '🔴' : '⏸️';
+      trackbarTitle.textContent = isTracking ? 'Opname loopt' : 'Gepauzeerd';
+      var dist = trackDistanceMeters();
+      trackbarDist.textContent = dist >= 1000 ? (dist/1000).toFixed(2)+' km' : Math.round(dist)+' m';
+    } else {
+      trackbar.classList.remove('show');
+    }
   }
   refreshTrackButton();
 
-  btnTrack.addEventListener('click', function(){
+  function toggleTracking(){
     isTracking = !isTracking;
     settings.isTracking = isTracking;
     pendingOutlier = null; // niet laten meeslepen tussen pauzeren/hervatten
@@ -1363,6 +1438,17 @@
     refreshTrackButton();
     requestWakeLock();
     showToast(isTracking ? 'Spoor wordt opgenomen' : 'Spoor gepauzeerd');
+  }
+
+  btnTrack.addEventListener('click', toggleTracking);
+
+  document.getElementById('btnTrackPauseFab').addEventListener('click', toggleTracking);
+
+  // Fix: stoppen op het hoofdscherm pauzeert het spoor en vraagt meteen om
+  // het op te slaan (branch fix-27)
+  document.getElementById('btnTrackStopFab').addEventListener('click', function(){
+    if(isTracking){ toggleTracking(); }
+    promptSaveTrack();
   });
 
   document.getElementById('btnClear').addEventListener('click', function(){
@@ -1373,6 +1459,7 @@
       polyline.setLatLngs([]);
       saveTrack(track);
       updateStats();
+      refreshTrackButton();
       showToast('Spoor gewist');
     }
   });
