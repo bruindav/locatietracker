@@ -1,6 +1,5 @@
-<!-- Fix: de zwevende balk na "Klaar" (Opslaan/Wijzigen/Nieuw) sluit zichzelf nu na het
-     opslaan van de route, en heeft een eigen kruisknop om 'm ook zonder opslaan te
-     sluiten (branch fix-29) -->
+<!-- Fix: kruisknop op de spoor-bedieningsbalk om een lopende opname direct af te
+     breken zonder op te slaan (met bevestiging, want onomkeerbaar) (branch fix-30) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -289,7 +288,8 @@
 <div class="north-badge" aria-hidden="true"><span class="arrow">↑</span><span>N</span></div>
 
 <!-- Fix: bedieningsbalk voor het spoor op het hoofdscherm — pauzeren/hervatten en
-     stoppen zonder eerst het menu te hoeven openen (branch fix-27) -->
+     stoppen zonder eerst het menu te hoeven openen (branch fix-27); kruisknop om de
+     opname direct af te breken zonder op te slaan (branch fix-30) -->
 <div class="trackbar" id="trackbar">
   <div class="trackbar-info">
     <span id="trackbarIcon">🔴</span>
@@ -300,7 +300,8 @@
   </div>
   <div class="trackbar-actions">
     <button id="btnTrackPauseFab" title="Pauzeer/hervat">⏸️</button>
-    <button id="btnTrackStopFab" class="stop" title="Stop">⏹️</button>
+    <button id="btnTrackStopFab" class="stop" title="Stop (opslaan)">⏹️</button>
+    <button id="btnTrackDiscardFab" title="Afbreken zonder opslaan">✖️</button>
   </div>
 </div>
 
@@ -430,7 +431,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-29';
+  var APP_VERSION = 'fix-30';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1528,6 +1529,24 @@
     if(isTracking){ toggleTracking(); }
     promptSaveTrack();
   });
+
+  // Fix: opname direct afbreken zonder op te slaan, met bevestiging omdat dit
+  // niet ongedaan te maken is (branch fix-30)
+  function discardTrack(){
+    if(track.length === 0) return;
+    if(!confirm('Opname afbreken zonder opslaan? Het spoor gaat dan verloren.')) return;
+    isTracking = false;
+    settings.isTracking = false;
+    saveSettings(settings);
+    track = [];
+    pendingOutlier = null;
+    polyline.setLatLngs([]);
+    saveTrack(track);
+    updateStats();
+    refreshTrackButton();
+    showToast('Opname afgebroken');
+  }
+  document.getElementById('btnTrackDiscardFab').addEventListener('click', discardTrack);
 
   document.getElementById('btnClear').addEventListener('click', function(){
     if(track.length === 0) return;
