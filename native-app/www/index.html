@@ -1,5 +1,5 @@
-<!-- Fix: kruisknop op de spoor-bedieningsbalk om een lopende opname direct af te
-     breken zonder op te slaan (met bevestiging, want onomkeerbaar) (branch fix-30) -->
+<!-- Fix: zijmenu sluit nu automatisch zodra het spoor wordt (her)start vanuit het
+     menu, zodat de kaart meteen zichtbaar is (branch fix-31) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -431,7 +431,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-30';
+  var APP_VERSION = 'fix-31';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1517,6 +1517,9 @@
     refreshTrackButton();
     requestWakeLock();
     showToast(isTracking ? 'Spoor wordt opgenomen' : 'Spoor gepauzeerd');
+    // Fix: bij het (opnieuw) starten van de opname het zijmenu sluiten, zodat de
+    // kaart meteen zichtbaar is (branch fix-31)
+    if(isTracking){ closeDrawer(); }
   }
 
   btnTrack.addEventListener('click', toggleTracking);
