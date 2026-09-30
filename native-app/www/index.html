@@ -1,5 +1,6 @@
-<!-- Fix: zijmenu sluit nu automatisch zodra het spoor wordt (her)start vanuit het
-     menu, zodat de kaart meteen zichtbaar is (branch fix-31) -->
+<!-- Fix: vervoerswijze nu ook instelbaar vanuit de spoor-bedieningsbalk zelf — een
+     rondje-icoon dat bij elke tik wisselt tussen lopen/fietsen/auto; een gloednieuwe
+     opname begint altijd weer op "lopen" (branch fix-32) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -91,17 +92,20 @@
     padding:10px 12px; box-shadow:0 4px 16px rgba(0,0,0,0.4);
   }
   .trackbar.show{ display:flex; }
-  .trackbar-info{ display:flex; align-items:center; gap:8px; min-width:0; }
-  .trackbar-title{ font-size:13px; font-weight:700; color:var(--text); }
+  .trackbar-info{ display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; }
+  .trackbar-title{ font-size:13px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .trackbar-dist{ font-size:12px; color:var(--muted); }
   .trackbar.paused #trackbarIcon{ filter:grayscale(1); opacity:0.7; }
-  .trackbar-actions{ display:flex; gap:8px; flex:0 0 auto; }
+  /* Fix: vierde knop (vervoerswijze) toegevoegd — iets kleiner en met wrap, zodat
+     de balk ook op smalle schermen past (branch fix-32) */
+  .trackbar-actions{ display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end; }
   .trackbar-actions button{
-    width:42px; height:42px; border-radius:50%; border:1px solid var(--border);
-    background:var(--panel2); color:var(--text); font-size:17px; cursor:pointer;
+    width:38px; height:38px; border-radius:50%; border:1px solid var(--border);
+    background:var(--panel2); color:var(--text); font-size:16px; cursor:pointer;
     display:flex; align-items:center; justify-content:center;
   }
   .trackbar-actions button.stop{ background:var(--danger); border-color:var(--danger); color:#2a0000; }
+  .trackbar-actions button.mode{ background:var(--accent); border-color:var(--accent); color:#04131f; }
 
   /* ---------- Fix: zwevende balk na "Klaar" met plannen — Opslaan/Wijzigen/Nieuw
      (branch fix-28). Deelt de opmaak van .trackbar maar staat hoger, zodat hij niet
@@ -299,6 +303,7 @@
     </div>
   </div>
   <div class="trackbar-actions">
+    <button id="btnTrackModeFab" class="mode" title="Vervoerswijze wijzigen">🚶</button>
     <button id="btnTrackPauseFab" title="Pauzeer/hervat">⏸️</button>
     <button id="btnTrackStopFab" class="stop" title="Stop (opslaan)">⏹️</button>
     <button id="btnTrackDiscardFab" title="Afbreken zonder opslaan">✖️</button>
@@ -431,7 +436,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-31';
+  var APP_VERSION = 'fix-32';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1484,6 +1489,11 @@
   var trackbarIcon = document.getElementById('trackbarIcon');
   var trackbarTitle = document.getElementById('trackbarTitle');
   var trackbarDist = document.getElementById('trackbarDist');
+  // Fix: vervoerswijze instelbaar vanuit de spoor-balk zelf, met een simpel
+  // rondje-icoon dat bij elke tik naar de volgende wijze springt (branch fix-32)
+  var TRAVEL_MODE_CYCLE = ['foot', 'bike', 'car'];
+  var TRAVEL_MODE_ICONS = { foot: '🚶', bike: '🚴', car: '🚗' };
+  var btnTrackModeFab = document.getElementById('btnTrackModeFab');
   function refreshTrackButton(){
     if(isTracking){
       btnTrack.textContent = '⏸️ Pauzeer spoor';
@@ -1506,11 +1516,22 @@
     } else {
       trackbar.classList.remove('show');
     }
+    var prof = ROUTE_PROFILES[travelMode];
+    btnTrackModeFab.textContent = TRAVEL_MODE_ICONS[travelMode] || TRAVEL_MODE_ICONS.foot;
+    btnTrackModeFab.title = 'Vervoerswijze: ' + (prof ? prof.label : 'lopen') + ' (tik om te wisselen)';
   }
   refreshTrackButton();
 
   function toggleTracking(){
+    // Fix: een gloednieuwe opname (nog geen enkel punt) start altijd weer op
+    // "lopen" — daarna kun je 'm via het icoon op de balk zelf omzetten (branch fix-32)
+    var startingFresh = !isTracking && track.length === 0;
     isTracking = !isTracking;
+    if(isTracking && startingFresh){
+      travelMode = 'foot';
+      settings.travelMode = travelMode;
+      updateModeButtons();
+    }
     settings.isTracking = isTracking;
     pendingOutlier = null; // niet laten meeslepen tussen pauzeren/hervatten
     saveSettings(settings);
@@ -1525,6 +1546,17 @@
   btnTrack.addEventListener('click', toggleTracking);
 
   document.getElementById('btnTrackPauseFab').addEventListener('click', toggleTracking);
+
+  // Fix: tik op het vervoerswijze-icoon springt naar de volgende wijze —
+  // lopen → fietsen → auto → weer lopen (branch fix-32)
+  btnTrackModeFab.addEventListener('click', function(){
+    var idx = TRAVEL_MODE_CYCLE.indexOf(travelMode);
+    travelMode = TRAVEL_MODE_CYCLE[(idx + 1) % TRAVEL_MODE_CYCLE.length];
+    settings.travelMode = travelMode;
+    saveSettings(settings);
+    updateModeButtons();
+    refreshTrackButton();
+  });
 
   // Fix: stoppen op het hoofdscherm pauzeert het spoor en vraagt meteen om
   // het op te slaan (branch fix-27)
