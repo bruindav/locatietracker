@@ -1,8 +1,8 @@
-<!-- Fix: pijltje-kleur met meer marge en hysterese (30m grens op het dichtstbijzijnde
-     routepunt + verschillende drempels om oranje/rood in en uit te gaan), zodat een
-     lus/haarspeldbocht in de route niet meer voor valse kleurwissels zorgt; plus een
-     bedieningsbalk op het hoofdscherm om het spoor te pauzeren/hervatten of te stoppen,
-     met bij stoppen meteen de vraag om het spoor op te slaan (branch fix-27) -->
+<!-- Fix: routeplanning omgezet van een aan/uit-schakelaar naar een geleide flow —
+     "Nieuwe route" in het zijmenu start het plannen, "Klaar" op de plan-balk verbergt
+     de hulpmiddelen weer en toont dan een zwevende balk met Opslaan/Wijzigen/Nieuw,
+     zodat wijzigen de hulpmiddelen opnieuw laat verschijnen zonder de route te wissen
+     (branch fix-28) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -105,6 +105,12 @@
     display:flex; align-items:center; justify-content:center;
   }
   .trackbar-actions button.stop{ background:var(--danger); border-color:var(--danger); color:#2a0000; }
+
+  /* ---------- Fix: zwevende balk na "Klaar" met plannen — Opslaan/Wijzigen/Nieuw
+     (branch fix-28). Deelt de opmaak van .trackbar maar staat hoger, zodat hij niet
+     overlapt als er toevallig ook getrackt wordt. ---------- */
+  .trackbar.routebar{ bottom:168px; }
+  .trackbar-actions button.newroute{ background:var(--accent2); border-color:var(--accent2); color:#04220f; }
 
   /* ---------- Zijmenu (drawer) ---------- */
   .drawer-backdrop{
@@ -309,6 +315,24 @@
   </div>
 </div>
 
+<!-- Fix: balk die verschijnt zodra de plan-hulpmiddelen na "Klaar" weer verborgen
+     zijn maar er een route klaarstaat — opslaan, wijzigen (hulpmiddelen komen dan
+     terug) of meteen een nieuwe route beginnen (branch fix-28) -->
+<div class="trackbar routebar" id="routebar">
+  <div class="trackbar-info">
+    <span>🗺️</span>
+    <div>
+      <div class="trackbar-title">Route klaar</div>
+      <div class="trackbar-dist" id="routebarDist"></div>
+    </div>
+  </div>
+  <div class="trackbar-actions">
+    <button id="btnRouteSaveFab" title="Opslaan">💾</button>
+    <button id="btnRouteEditFab" title="Wijzigen">✏️</button>
+    <button id="btnRouteNewFab" class="newroute" title="Nieuwe route">➕</button>
+  </div>
+</div>
+
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <div class="drawer" id="drawer">
   <h1>Locatietracker <span class="closeBtn" id="btnCloseDrawer">✕</span></h1>
@@ -335,15 +359,13 @@
     <div class="stat-line" id="trackStat" style="margin-top:10px;"></div>
   </section>
 
+  <!-- Fix: geleide flow i.p.v. een losse aan/uit-schakelaar — "Nieuwe route"
+       start het plannen, "Route wijzigen" verschijnt zodra er al een route
+       klaarstaat (branch fix-28) -->
   <section>
     <h2>Route plannen</h2>
-    <label class="row">
-      <span>Toon plan-hulpmiddelen op de kaart</span>
-      <span class="switch">
-        <input type="checkbox" id="chkPlanning">
-        <span class="track"><span class="knob"></span></span>
-      </span>
-    </label>
+    <button class="dbtn" id="btnNewRoute">➕ Nieuwe route plannen</button>
+    <button class="dbtn" id="btnEditRoute" style="margin-top:8px; display:none;">✏️ Route wijzigen</button>
     <div id="planningControls" style="display:none;">
       <div class="waypoint-list" id="waypointList"></div>
       <label class="row">
@@ -408,7 +430,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-27';
+  var APP_VERSION = 'fix-28';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -583,8 +605,9 @@
   }).addTo(map);
 
   // ---------- Navigatie: route plannen (gewoon punten aantikken, eerste = start) ----------
-  // Eén doorlopend model: elke tik voegt altijd een punt toe aan routePoints, ongeacht de
-  // schakelaar hieronder — die bepaalt alleen of de plan-hulpmiddelen zichtbaar zijn.
+  // Fix (fix-28): een tik voegt alleen nog een punt toe zolang planningToolsVisible aan
+  // staat — die wordt nu gestuurd door de "Nieuwe route"/"Wijzigen"-knoppen i.p.v. een
+  // losse schakelaar, zie het "Klaar"-blok verderop.
   var ROUTE_PROFILES = {
     foot: { server: 'routed-foot', profile: 'foot',    label: 'lopen'   },
     bike: { server: 'routed-bike', profile: 'bike',    label: 'fietsen' },
@@ -700,25 +723,39 @@
     calculateRoute();
   });
 
-  // ---------- Plan-hulpmiddelen tonen/verbergen (verandert NIET het tik-gedrag zelf) ----------
-  var chkPlanning = document.getElementById('chkPlanning');
+  // ---------- Fix: geleide flow voor routeplanning i.p.v. een losse aan/uit-
+  // schakelaar (branch fix-28). "Nieuwe route" en "Route wijzigen" sturen
+  // planningToolsVisible nu aan; het tik-gedrag zelf verandert niet. ----------
   var chkLoop = document.getElementById('chkLoop');
   var planningControls = document.getElementById('planningControls');
   var planningHint = document.getElementById('planningHint');
+  var btnNewRoute = document.getElementById('btnNewRoute');
+  var btnEditRoute = document.getElementById('btnEditRoute');
   function refreshPlanningUI(){
-    chkPlanning.checked = planningToolsVisible;
     planningControls.style.display = planningToolsVisible ? 'block' : 'none';
-    planningHint.style.display = routePoints.length === 0 ? 'block' : 'none';
+    planningHint.style.display = (planningToolsVisible && routePoints.length === 0) ? 'block' : 'none';
     chkLoop.checked = closeLoop;
+    btnNewRoute.style.display = planningToolsVisible ? 'none' : 'block';
+    btnEditRoute.style.display = (!planningToolsVisible && routePoints.length >= 2) ? 'block' : 'none';
     refreshPlanBar();
   }
-  chkPlanning.addEventListener('change', function(){
-    planningToolsVisible = chkPlanning.checked;
-    settings.planningEnabled = planningToolsVisible;
+  function startPlanning(clear){
+    if(clear){ clearRoute(); }
+    planningToolsVisible = true;
+    settings.planningEnabled = true;
     saveSettings(settings);
     refreshPlanningUI();
-    if(planningToolsVisible) closeDrawer();
-  });
+    closeDrawer();
+  }
+  function resumePlanning(){
+    planningToolsVisible = true;
+    settings.planningEnabled = true;
+    saveSettings(settings);
+    refreshPlanningUI();
+    closeDrawer();
+  }
+  btnNewRoute.addEventListener('click', function(){ startPlanning(true); });
+  btnEditRoute.addEventListener('click', resumePlanning);
   chkLoop.addEventListener('change', function(){
     if(routePoints.length < 2){
       showToast('Minstens 2 punten nodig voor een rondje');
@@ -732,6 +769,21 @@
 
   // ---------- Zwevende plan-balk op de kaart ----------
   var planbarEl = document.getElementById('planbar');
+  // Fix: balk die na "Klaar" verschijnt zolang er een route klaarstaat, met
+  // Opslaan/Wijzigen/Nieuw, zonder eerst het zijmenu te hoeven openen (branch fix-28)
+  var routebarEl = document.getElementById('routebar');
+  var routebarDist = document.getElementById('routebarDist');
+  function refreshRouteBar(){
+    var show = !planningToolsVisible && routePoints.length >= 2;
+    routebarEl.classList.toggle('show', show);
+    if(show && currentLegsInfo && currentLegsInfo.length){
+      var totalKm = currentLegsInfo.reduce(function(sum, leg){ return sum + parseFloat(leg.km); }, 0);
+      var elevTxt = currentElevationInfo ? (' · ⬆' + currentElevationInfo.gain + 'm ⬇' + currentElevationInfo.loss + 'm') : '';
+      routebarDist.textContent = totalKm.toFixed(2) + ' km' + elevTxt;
+    } else {
+      routebarDist.textContent = '';
+    }
+  }
   function refreshPlanBar(){
     planbarEl.classList.toggle('show', planningToolsVisible);
     document.getElementById('pbLoop').classList.toggle('armed', closeLoop);
@@ -749,6 +801,7 @@
     } else {
       distEl.textContent = '';
     }
+    refreshRouteBar();
   }
   document.getElementById('pbLoop').addEventListener('click', function(){
     if(routePoints.length < 2){ showToast('Minstens 2 punten nodig voor een rondje'); return; }
@@ -762,6 +815,8 @@
     saveSettings(settings);
     refreshPlanningUI();
   });
+  document.getElementById('btnRouteEditFab').addEventListener('click', resumePlanning);
+  document.getElementById('btnRouteNewFab').addEventListener('click', function(){ startPlanning(true); });
   refreshPlanningUI();
 
   function clearRoute(){
@@ -989,7 +1044,9 @@
     if(cb) cb(naam, savedAt, mode);
   });
 
-  document.getElementById('btnSaveRoute').addEventListener('click', function(){
+  // Fix: herbruikbaar gemaakt zodat zowel de knop in het menu als de zwevende
+  // balk na "Klaar" dezelfde opslaan-vraag kunnen tonen (branch fix-28).
+  function promptSaveRoute(){
     if(routePoints.length < 2){
       showToast('Plan eerst een route (minstens 2 punten)');
       return;
@@ -1010,7 +1067,9 @@
       renderSavedList();
       showToast('Route "' + naam + '" opgeslagen');
     });
-  });
+  }
+  document.getElementById('btnSaveRoute').addEventListener('click', promptSaveRoute);
+  document.getElementById('btnRouteSaveFab').addEventListener('click', promptSaveRoute);
 
   // Fix: herbruikbaar gemaakt zodat zowel de knop in het menu als de "Stop"-actie
   // op het hoofdscherm dezelfde opslaan-vraag kunnen tonen (branch fix-27).
@@ -1098,9 +1157,12 @@
 
   renderSavedList();
 
-  // Elke tik op de kaart voegt een punt toe aan de route — altijd, ongeacht of de
-  // plan-hulpmiddelen zichtbaar zijn. Zo bestaat er maar één, voorspelbaar routemodel.
+  // Fix: een tik op de kaart voegt alleen nog een routepunt toe zolang de
+  // plan-hulpmiddelen actief zijn ("Nieuwe route" / "Wijzigen") — buiten het
+  // plannen om is de kaart nu gewoon de kaart, zonder per ongeluk een klaarstaande
+  // route te verpesten met een losse tik (branch fix-28)
   map.on('click', function(e){
+    if(!planningToolsVisible) return;
     routePoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
     redrawRouteMarkers();
     renderPointList();
