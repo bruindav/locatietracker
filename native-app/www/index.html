@@ -1,8 +1,6 @@
-<!-- Fix: routeplanning omgezet van een aan/uit-schakelaar naar een geleide flow —
-     "Nieuwe route" in het zijmenu start het plannen, "Klaar" op de plan-balk verbergt
-     de hulpmiddelen weer en toont dan een zwevende balk met Opslaan/Wijzigen/Nieuw,
-     zodat wijzigen de hulpmiddelen opnieuw laat verschijnen zonder de route te wissen
-     (branch fix-28) -->
+<!-- Fix: de zwevende balk na "Klaar" (Opslaan/Wijzigen/Nieuw) sluit zichzelf nu na het
+     opslaan van de route, en heeft een eigen kruisknop om 'm ook zonder opslaan te
+     sluiten (branch fix-29) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -317,7 +315,8 @@
 
 <!-- Fix: balk die verschijnt zodra de plan-hulpmiddelen na "Klaar" weer verborgen
      zijn maar er een route klaarstaat — opslaan, wijzigen (hulpmiddelen komen dan
-     terug) of meteen een nieuwe route beginnen (branch fix-28) -->
+     terug) of meteen een nieuwe route beginnen (branch fix-28); sluit zichzelf na
+     het opslaan, en de kruisknop sluit 'm ook zonder op te slaan (branch fix-29) -->
 <div class="trackbar routebar" id="routebar">
   <div class="trackbar-info">
     <span>🗺️</span>
@@ -330,6 +329,7 @@
     <button id="btnRouteSaveFab" title="Opslaan">💾</button>
     <button id="btnRouteEditFab" title="Wijzigen">✏️</button>
     <button id="btnRouteNewFab" class="newroute" title="Nieuwe route">➕</button>
+    <button id="btnRouteCloseFab" title="Sluiten (niet opslaan)">✖️</button>
   </div>
 </div>
 
@@ -430,7 +430,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-28';
+  var APP_VERSION = 'fix-29';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -751,6 +751,9 @@
     planningToolsVisible = true;
     settings.planningEnabled = true;
     saveSettings(settings);
+    // Fix: de balk mag straks weer verschijnen zodra er opnieuw op "Klaar" wordt
+    // getikt, ook al was hij hiervoor gesloten (branch fix-29)
+    routebarDismissed = false;
     refreshPlanningUI();
     closeDrawer();
   }
@@ -773,8 +776,11 @@
   // Opslaan/Wijzigen/Nieuw, zonder eerst het zijmenu te hoeven openen (branch fix-28)
   var routebarEl = document.getElementById('routebar');
   var routebarDist = document.getElementById('routebarDist');
+  // Fix: laat de balk zichzelf sluiten na het opslaan, en geef 'm een eigen
+  // kruisknop om 'm ook zonder opslaan te sluiten (branch fix-29)
+  var routebarDismissed = false;
   function refreshRouteBar(){
-    var show = !planningToolsVisible && routePoints.length >= 2;
+    var show = !planningToolsVisible && routePoints.length >= 2 && !routebarDismissed;
     routebarEl.classList.toggle('show', show);
     if(show && currentLegsInfo && currentLegsInfo.length){
       var totalKm = currentLegsInfo.reduce(function(sum, leg){ return sum + parseFloat(leg.km); }, 0);
@@ -813,10 +819,15 @@
     planningToolsVisible = false;
     settings.planningEnabled = false;
     saveSettings(settings);
+    routebarDismissed = false; // Fix: balk moet na "Klaar" weer kunnen verschijnen (branch fix-29)
     refreshPlanningUI();
   });
   document.getElementById('btnRouteEditFab').addEventListener('click', resumePlanning);
   document.getElementById('btnRouteNewFab').addEventListener('click', function(){ startPlanning(true); });
+  document.getElementById('btnRouteCloseFab').addEventListener('click', function(){
+    routebarDismissed = true;
+    refreshRouteBar();
+  });
   refreshPlanningUI();
 
   function clearRoute(){
@@ -829,6 +840,7 @@
     currentLegsInfo = null;
     currentElevationInfo = null;
     currentRouteCoordsForCheck = null;
+    routebarDismissed = false; // Fix: een gewiste route mag de balk niet blijvend blokkeren (branch fix-29)
     refreshPlanningUI();
     updateStats();
   }
@@ -1066,6 +1078,10 @@
       saveSavedItems(savedItems);
       renderSavedList();
       showToast('Route "' + naam + '" opgeslagen');
+      // Fix: na het opslaan de zwevende balk weer sluiten — de route is nu
+      // veiliggesteld, dus hoeft niet nog langer om aandacht te vragen (branch fix-29)
+      routebarDismissed = true;
+      refreshRouteBar();
     });
   }
   document.getElementById('btnSaveRoute').addEventListener('click', promptSaveRoute);
