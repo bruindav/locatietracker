@@ -1,6 +1,6 @@
-<!-- Fix: snelle "Start spoor"/"Nieuw spoor"-knop op het hoofdscherm (bij een bestaand spoor
-     eerst opslaan of weggooien); een spoor dat 2 uur niet veranderd is wordt automatisch
-     opgeslagen en beëindigd (branch fix-35) -->
+<!-- Fix: kaartlaag "Fiets/Wandel" (was een pure fietskaart) opgesplitst in "Fietsen (fietsroutes)" en
+     "Wandelen (wandelroutes)", met onder de keuzelijst uitleg wat de lijnen en cirkels betekenen
+     (branch fix-36) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -356,6 +356,7 @@
   <section>
     <h2>Kaarttype</h2>
     <select id="layerSelect" aria-label="Kaarttype"></select>
+    <div class="hint" id="layerLegend" style="margin-top:8px;"></div>
   </section>
 
   <section>
@@ -471,7 +472,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-35';
+  var APP_VERSION = 'fix-36';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -609,12 +610,31 @@
     "Satelliet": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19, attribution: 'Tiles &copy; Esri'
     }),
-    "Fiets/Wandel": L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
+    // Fix: de oude laag "Fiets/Wandel" (CyclOSM) is een fietskaart en toont geen wandelroutes;
+    // daarom nu twee duidelijk benoemde lagen, elk met uitleg eronder (branch fix-36)
+    "Fietsen (fietsroutes)": L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
       maxZoom: 20, attribution: '&copy; OpenStreetMap, CyclOSM'
-    })
+    }),
+    "Wandelen (wandelroutes)": L.layerGroup([
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap'
+      }),
+      L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png', {
+        maxZoom: 18, attribution: 'Routes &copy; Waymarked Trails'
+      })
+    ])
+  };
+
+  var LAYER_LEGEND = {
+    "Straat (OSM)": 'Gewone wegenkaart.',
+    "Topografisch": 'Topografische kaart met hoogtelijnen (dunne bruine lijnen).',
+    "Satelliet": 'Luchtfoto, zonder routes of paden.',
+    "Fietsen (fietsroutes)": 'Kaart voor fietsers. Blauwe lijnen zijn bewegwijzerde fietsroutes; de genummerde cirkels zijn de routenummers of knooppunten daarvan. Wandelpaden worden hier niet apart getoond: kies daarvoor "Wandelen".',
+    "Wandelen (wandelroutes)": 'Gekleurde lijnen over de kaart zijn bewegwijzerde wandelroutes; de tekst of het nummer langs de lijn is de naam van de route. Fietsroutes staan hier niet op: kies daarvoor "Fietsen".'
   };
 
   var layerNames = Object.keys(layers);
+  if(settings.layer === 'Fiets/Wandel'){ settings.layer = 'Fietsen (fietsroutes)'; } // oude naam omzetten
   var startLayerName = settings.layer && layers[settings.layer] ? settings.layer : layerNames[0];
   layers[startLayerName].addTo(map);
 
@@ -625,7 +645,11 @@
     if(name === startLayerName) opt.selected = true;
     layerSelect.appendChild(opt);
   });
+  var layerLegendEl = document.getElementById('layerLegend');
+  function showLayerLegend(name){ layerLegendEl.textContent = LAYER_LEGEND[name] || ''; }
+  showLayerLegend(startLayerName);
   layerSelect.addEventListener('change', function(){
+    showLayerLegend(layerSelect.value);
     Object.values(layers).forEach(function(l){ map.removeLayer(l); });
     layers[layerSelect.value].addTo(map);
     settings.layer = layerSelect.value;
