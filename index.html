@@ -1,6 +1,6 @@
-<!-- Fix: vervoerswijze nu ook instelbaar vanuit de spoor-bedieningsbalk zelf — een
-     rondje-icoon dat bij elke tik wisselt tussen lopen/fietsen/auto; een gloednieuwe
-     opname begint altijd weer op "lopen" (branch fix-32) -->
+<!-- Fix: tijdens wandelen vraagt de app of de opname beëindigd moet worden zodra je
+     structureel sneller dan 6 km/u gaat (gemiddelde over het laatste half minuut);
+     zonder antwoord binnen 30 seconden wordt de opname gepauzeerd (branch fix-33) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -427,6 +427,19 @@
   </div>
 </div>
 
+<!-- Fix: vraag of de opname beëindigd moet worden zodra je tijdens wandelen structureel
+     sneller dan 6 km/u gaat; zonder antwoord binnen 30 s wordt de opname gepauzeerd (branch fix-33) -->
+<div class="modal-backdrop" id="speedModalBackdrop">
+  <div class="modal-card">
+    <h3>🏃 Je gaat sneller dan wandelen</h3>
+    <div class="hint" id="speedModalText" style="margin:0;"></div>
+    <div class="modal-actions">
+      <button type="button" id="speedModalContinue">Doorgaan</button>
+      <button type="button" id="speedModalEnd" class="primary">Beëindigen</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <!-- Fix: pluginbundel voor achtergrondlocatie — bestaat alleen in de native-app build
      (gegenereerd met "npm run build:plugins"); ontbreekt op de website en faalt dan
@@ -436,7 +449,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-32';
+  var APP_VERSION = 'fix-33';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1316,6 +1329,82 @@
   // alsnog toegevoegd. Sluit de volgende fix niet aan, dan wordt de sprong
   // stilzwijgend genegeerd en gaat het spoor gewoon verder vanaf het laatste
   // goede punt (branch fix-23).
+  // ---------- Fix: boven wandeltempo? Vraag of de opname beëindigd moet worden (branch fix-33) ----------
+  // Gemiddelde snelheid over het laatste halve minuutje van het spoor (niet over één GPS-fix,
+  // want die schiet er door ruis zo uit). Alleen bij vervoerswijze "lopen".
+  var WALK_MAX_KMH = 6;
+  var SPEED_WINDOW_MS = 30000;      // kijk naar het laatste half minuut
+  var SPEED_MIN_SPAN_MS = 12000;    // en wacht minstens zoveel data af voor we iets zeggen
+  var SPEED_PROMPT_TIMEOUT_S = 30;  // zonder antwoord: opname pauzeren
+  var SPEED_SNOOZE_MS = 5 * 60 * 1000; // na "Doorgaan" een tijd niet opnieuw vragen
+  var speedPromptOpen = false;
+  var speedSnoozeUntil = 0;
+  var speedPromptTimer = null;
+  var speedModalBackdrop = document.getElementById('speedModalBackdrop');
+  var speedModalText = document.getElementById('speedModalText');
+
+  function recentTrackSpeedKmh(){
+    var n = track.length;
+    if(n < 2) return null;
+    var newest = track[n-1];
+    var dist = 0, i = n - 1;
+    while(i > 0 && newest.t - track[i-1].t <= SPEED_WINDOW_MS){
+      dist += map.distance([track[i-1].lat, track[i-1].lng], [track[i].lat, track[i].lng]);
+      i--;
+    }
+    var span = newest.t - track[i].t;
+    if(span < SPEED_MIN_SPAN_MS) return null;
+    return (dist / (span / 1000)) * 3.6;
+  }
+
+  function closeSpeedPrompt(){
+    speedPromptOpen = false;
+    if(speedPromptTimer){ clearInterval(speedPromptTimer); speedPromptTimer = null; }
+    speedModalBackdrop.classList.remove('show');
+  }
+
+  function speedPromptText(kmh, secondsLeft){
+    return 'Je beweegt met ongeveer ' + kmh.toFixed(1).replace('.', ',') + ' km/u, dat is sneller dan wandelen. ' +
+      'Wil je de opname beëindigen? Zonder antwoord pauzeert de opname over ' + secondsLeft + ' s.';
+  }
+
+  function openSpeedPrompt(kmh){
+    speedPromptOpen = true;
+    var secondsLeft = SPEED_PROMPT_TIMEOUT_S;
+    speedModalText.textContent = speedPromptText(kmh, secondsLeft);
+    speedModalBackdrop.classList.add('show');
+    if(navigator.vibrate){ try { navigator.vibrate([200, 100, 200]); } catch(e){} }
+    speedPromptTimer = setInterval(function(){
+      // Ondertussen zelf gepauzeerd of van vervoerswijze gewisseld? Dan is de vraag achterhaald.
+      if(!isTracking || travelMode !== 'foot'){ closeSpeedPrompt(); return; }
+      secondsLeft--;
+      if(secondsLeft <= 0){
+        closeSpeedPrompt();
+        toggleTracking(); // pauzeren
+        showToast('Opname gepauzeerd: geen reactie op snelheidsmelding');
+        return;
+      }
+      speedModalText.textContent = speedPromptText(kmh, secondsLeft);
+    }, 1000);
+  }
+
+  function checkWalkingSpeed(){
+    if(speedPromptOpen || !isTracking || travelMode !== 'foot') return;
+    if(Date.now() < speedSnoozeUntil) return;
+    var kmh = recentTrackSpeedKmh();
+    if(kmh != null && kmh > WALK_MAX_KMH){ openSpeedPrompt(kmh); }
+  }
+
+  document.getElementById('speedModalContinue').addEventListener('click', function(){
+    closeSpeedPrompt();
+    speedSnoozeUntil = Date.now() + SPEED_SNOOZE_MS;
+  });
+  document.getElementById('speedModalEnd').addEventListener('click', function(){
+    closeSpeedPrompt();
+    if(isTracking){ toggleTracking(); }
+    promptSaveTrack();
+  });
+
   function addTrackFix(lat, lng, t){
     var last = track[track.length-1];
     if(!last){
@@ -1352,6 +1441,7 @@
       polyline.setLatLngs(track.map(function(p){return [p.lat,p.lng];}));
       saveTrack(track);
       routeLine.bringToFront();
+      checkWalkingSpeed(); // Fix: sneller dan wandelen? dan vragen of de opname klaar is (branch fix-33)
     } else {
       // Onwaarschijnlijke sprong — nog niet vertrouwen, pas bij bevestiging opnemen.
       pendingOutlier = candidate;
