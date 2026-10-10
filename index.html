@@ -1,6 +1,6 @@
-<!-- Fix: gaten in het opgenomen spoor (periodes zonder GPS-punten) worden niet meer met een
-     rechte lijn overbrugd en tellen niet meer mee in de afstand; ze blijven zichtbaar als
-     gestippelde grijze lijn (branch fix-34) -->
+<!-- Fix: snelle "Start spoor"/"Nieuw spoor"-knop op het hoofdscherm (bij een bestaand spoor
+     eerst opslaan of weggooien); een spoor dat 2 uur niet veranderd is wordt automatisch
+     opgeslagen en beëindigd (branch fix-35) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -245,6 +245,14 @@
     animation:arrowBlink 0.8s infinite;
   }
   @keyframes arrowBlink{ 0%,100%{ opacity:1; } 50%{ opacity:0.25; } }
+  /* Fix: snelle start-knop op het hoofdscherm (branch fix-35) */
+  .startpill{
+    position:absolute; left:50%; transform:translateX(-50%); bottom:24px; z-index:1000;
+    border:1px solid var(--accent2); background:var(--accent2); color:#04220f;
+    padding:12px 18px; border-radius:26px; font-size:14px; font-weight:700; cursor:pointer;
+    box-shadow:0 4px 14px rgba(0,0,0,0.45); white-space:nowrap;
+  }
+  .startpill:active{ transform:translateX(-50%) scale(0.96); }
   .north-badge{
     position:absolute; left:14px; bottom:20px; z-index:1000;
     width:44px; height:44px; border-radius:50%; background:rgba(22,29,36,0.92); border:1px solid var(--border);
@@ -290,6 +298,7 @@
 
 <button class="fab-center" id="btnCenter" aria-label="Centreren">📍</button>
 <div class="north-badge" aria-hidden="true"><span class="arrow">↑</span><span>N</span></div>
+<button class="startpill" id="btnStartPill">▶️ Start spoor</button>
 
 <!-- Fix: bedieningsbalk voor het spoor op het hoofdscherm — pauzeren/hervatten en
      stoppen zonder eerst het menu te hoeven openen (branch fix-27); kruisknop om de
@@ -440,6 +449,19 @@
   </div>
 </div>
 
+<!-- Fix: nieuw spoor starten terwijl er al een spoor is — eerst bepalen wat daarmee gebeurt (branch fix-35) -->
+<div class="modal-backdrop" id="newTrackModalBackdrop">
+  <div class="modal-card">
+    <h3>Nieuw spoor starten</h3>
+    <div class="hint" id="newTrackModalText" style="margin:0;"></div>
+    <div class="modal-actions" style="flex-direction:column;">
+      <button type="button" id="newTrackSave" class="primary">💾 Opslaan en nieuw spoor</button>
+      <button type="button" id="newTrackDiscard">🗑️ Weggooien en nieuw spoor</button>
+      <button type="button" id="newTrackCancel">Annuleren</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <!-- Fix: pluginbundel voor achtergrondlocatie — bestaat alleen in de native-app build
      (gegenereerd met "npm run build:plugins"); ontbreekt op de website en faalt dan
@@ -449,7 +471,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-34';
+  var APP_VERSION = 'fix-35';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -791,6 +813,7 @@
     btnNewRoute.style.display = planningToolsVisible ? 'none' : 'block';
     btnEditRoute.style.display = (!planningToolsVisible && routePoints.length >= 2) ? 'block' : 'none';
     refreshPlanBar();
+    if(typeof refreshStartPill === 'function') refreshStartPill();
   }
   function startPlanning(clear){
     if(clear){ clearRoute(); }
@@ -1142,7 +1165,7 @@
 
   // Fix: herbruikbaar gemaakt zodat zowel de knop in het menu als de "Stop"-actie
   // op het hoofdscherm dezelfde opslaan-vraag kunnen tonen (branch fix-27).
-  function promptSaveTrack(){
+  function promptSaveTrack(afterSave){
     if(track.length === 0){
       showToast('Er is nog geen spoor om op te slaan');
       return;
@@ -1158,9 +1181,10 @@
       saveSavedItems(savedItems);
       renderSavedList();
       showToast('Spoor "' + naam + '" opgeslagen');
+      if(typeof afterSave === 'function') afterSave();
     });
   }
-  document.getElementById('btnSaveTrack').addEventListener('click', promptSaveTrack);
+  document.getElementById('btnSaveTrack').addEventListener('click', function(){ promptSaveTrack(); });
 
   function loadSavedItem(id){
     var item = savedItems.filter(function(it){ return it.id === id; })[0];
@@ -1644,6 +1668,7 @@
     }
     var prof = ROUTE_PROFILES[travelMode];
     btnTrackModeFab.textContent = TRAVEL_MODE_ICONS[travelMode] || TRAVEL_MODE_ICONS.foot;
+    if(typeof refreshStartPill === 'function') refreshStartPill();
     btnTrackModeFab.title = 'Vervoerswijze: ' + (prof ? prof.label : 'lopen') + ' (tik om te wisselen)';
   }
   refreshTrackButton();
@@ -1690,6 +1715,87 @@
     if(isTracking){ toggleTracking(); }
     promptSaveTrack();
   });
+
+  // ---------- Fix: snel een nieuw spoor starten vanaf het hoofdscherm (branch fix-35) ----------
+  var btnStartPill = document.getElementById('btnStartPill');
+  var newTrackModal = document.getElementById('newTrackModalBackdrop');
+  function refreshStartPill(){
+    if(!btnStartPill) return;
+    btnStartPill.textContent = track.length > 0 ? '▶️ Nieuw spoor' : '▶️ Start spoor';
+    // Tijdens het plannen van een route staat de plan-balk al onderin; dan geen extra knop
+    btnStartPill.style.display = planningToolsVisible ? 'none' : 'block';
+  }
+  refreshStartPill();
+  function clearActiveTrack(){
+    isTracking = false;
+    settings.isTracking = false;
+    saveSettings(settings);
+    track = [];
+    pendingOutlier = null;
+    redrawTrack();
+    saveTrack(track);
+    updateStats();
+    refreshTrackButton();
+  }
+  function startFreshTrack(){
+    clearActiveTrack();
+    toggleTracking(); // nieuwe opname: begint op "lopen" en sluit het menu
+  }
+  function closeNewTrackModal(){ newTrackModal.classList.remove('show'); }
+  btnStartPill.addEventListener('click', function(){
+    if(isTracking && track.length === 0){ return; } // loopt al, wacht op eerste punt
+    if(track.length === 0){ startFreshTrack(); return; }
+    var dist = trackDistanceMeters();
+    var distTxt = dist >= 1000 ? (dist/1000).toFixed(2).replace('.', ',') + ' km' : Math.round(dist) + ' m';
+    document.getElementById('newTrackModalText').textContent =
+      'Er is al een spoor (' + distTxt + (isTracking ? ', loopt nog' : ', gepauzeerd') +
+      '). Dat wordt beëindigd voordat het nieuwe begint.';
+    newTrackModal.classList.add('show');
+  });
+  document.getElementById('newTrackCancel').addEventListener('click', closeNewTrackModal);
+  document.getElementById('newTrackDiscard').addEventListener('click', function(){
+    closeNewTrackModal();
+    startFreshTrack();
+  });
+  document.getElementById('newTrackSave').addEventListener('click', function(){
+    closeNewTrackModal();
+    // Pas na het daadwerkelijk opslaan wordt het nieuwe spoor gestart; annuleren in het
+    // opslaan-dialoogje laat het huidige spoor gewoon doorlopen.
+    promptSaveTrack(startFreshTrack);
+  });
+
+  // ---------- Fix: spoor dat 2 uur niet veranderd is wordt automatisch beëindigd (branch fix-35) ----------
+  // Het laatste punt is dan ouder dan 2 uur (lopend of gepauzeerd). Het spoor wordt eerst
+  // automatisch opgeslagen (met de datum van het laatste punt) zodat er niets verloren gaat.
+  var TRACK_STALE_MS = 2 * 60 * 60 * 1000;
+  function autoEndStaleTrack(){
+    if(track.length === 0) return;
+    var lastT = track[track.length - 1].t;
+    if(!lastT || Date.now() - lastT <= TRACK_STALE_MS) return;
+    if(track.length >= 2){
+      var savedAt = new Date(lastT).toISOString();
+      var naam = 'Spoor ' + fmtSavedDate(savedAt) + ' (automatisch beëindigd)';
+      savedItems.push({
+        id: 't' + Date.now(),
+        type: 'track',
+        name: naam,
+        savedAt: savedAt,
+        data: { track: track.slice(), travelMode: travelMode }
+      });
+      saveSavedItems(savedItems);
+      renderSavedList();
+      showToast('Spoor 2 uur niet veranderd: automatisch beëindigd en opgeslagen');
+    } else {
+      showToast('Spoor 2 uur niet veranderd: automatisch beëindigd');
+    }
+    if(typeof closeSpeedPrompt === 'function') closeSpeedPrompt();
+    clearActiveTrack();
+  }
+  setInterval(autoEndStaleTrack, 60000);
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible') autoEndStaleTrack();
+  });
+  autoEndStaleTrack();
 
   // Fix: opname direct afbreken zonder op te slaan, met bevestiging omdat dit
   // niet ongedaan te maken is (branch fix-30)
