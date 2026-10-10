@@ -1,6 +1,6 @@
-<!-- Fix: tijdens wandelen vraagt de app of de opname beëindigd moet worden zodra je
-     structureel sneller dan 6 km/u gaat (gemiddelde over het laatste half minuut);
-     zonder antwoord binnen 30 seconden wordt de opname gepauzeerd (branch fix-33) -->
+<!-- Fix: gaten in het opgenomen spoor (periodes zonder GPS-punten) worden niet meer met een
+     rechte lijn overbrugd en tellen niet meer mee in de afstand; ze blijven zichtbaar als
+     gestippelde grijze lijn (branch fix-34) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -449,7 +449,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-33';
+  var APP_VERSION = 'fix-34';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -619,9 +619,43 @@
 
   var accuracyCircle = L.circle([52.0907,5.1214], { radius: 0, color:'#3ba7ff', weight:1, fillOpacity:0.08 }).addTo(map);
 
-  var polyline = L.polyline(track.map(function(p){return [p.lat,p.lng];}), {
+  var polyline = L.polyline([], {
     color:'#37d67a', weight:4, opacity:0.85, lineJoin:'round'
   }).addTo(map);
+
+  // Fix: als er een tijdje geen GPS-punten binnenkwamen (scherm uit, bos, app op de
+  // achtergrond) trok de app vroeger een rechte lijn van het laatste naar het eerste
+  // nieuwe punt — dat leek een gelopen route maar was verzonnen, en telde ook mee in de
+  // afstand. Nu blijft zo'n gat een gestippelde grijze lijn en telt het niet mee (branch fix-34).
+  var TRACK_GAP_MS = 20000;   // zo lang geen enkel punt...
+  var TRACK_GAP_MIN_M = 30;   // ...en daarna minstens zo ver verderop = gat (stilstaan is geen gat)
+  var gapLine = L.polyline([], {
+    color:'#9aa7b2', weight:3, opacity:0.9, dashArray:'3 9', lineCap:'round'
+  }).addTo(map);
+  function isTrackGap(a, b){
+    return (b.t - a.t) > TRACK_GAP_MS &&
+      map.distance([a.lat, a.lng], [b.lat, b.lng]) > TRACK_GAP_MIN_M;
+  }
+  function trackGapCount(){
+    var n = 0;
+    for(var i = 1; i < track.length; i++){ if(isTrackGap(track[i-1], track[i])) n++; }
+    return n;
+  }
+  function redrawTrack(){
+    var segments = [], gaps = [], cur = [];
+    for(var i = 0; i < track.length; i++){
+      if(i > 0 && isTrackGap(track[i-1], track[i])){
+        if(cur.length) segments.push(cur);
+        gaps.push([[track[i-1].lat, track[i-1].lng], [track[i].lat, track[i].lng]]);
+        cur = [];
+      }
+      cur.push([track[i].lat, track[i].lng]);
+    }
+    if(cur.length) segments.push(cur);
+    polyline.setLatLngs(segments);
+    gapLine.setLatLngs(gaps);
+  }
+  redrawTrack();
 
   // ---------- Navigatie: route plannen (gewoon punten aantikken, eerste = start) ----------
   // Fix (fix-28): een tik voegt alleen nog een punt toe zolang planningToolsVisible aan
@@ -1168,7 +1202,7 @@
         updateModeButtons();
       }
       saveTrack(track);
-      polyline.setLatLngs(track.map(function(p){ return [p.lat, p.lng]; }));
+      redrawTrack();
       routeLine.bringToFront();
       updateStats();
       refreshTrackButton();
@@ -1278,6 +1312,7 @@
   function trackDistanceMeters(){
     var d = 0;
     for(var i=1;i<track.length;i++){
+      if(isTrackGap(track[i-1], track[i])) continue; // gat in de opname: niet meetellen (fix-34)
       d += map.distance([track[i-1].lat,track[i-1].lng],[track[i].lat,track[i].lng]);
     }
     return d;
@@ -1289,7 +1324,8 @@
     var bron = usingRecentMovementHeading() ? 'looprichting (GPS)' : 'laatst bekend (stilstaan)';
 
     document.getElementById('trackStat').innerHTML =
-      'Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b>';
+      'Spoor: <b>' + track.length + '</b> punten · <b>' + distTxt + '</b>' +
+      (trackGapCount() ? ' · <span style="color:var(--muted)">' + trackGapCount() + 'x geen signaal (gestippeld)</span>' : '');
 
     document.getElementById('routeStat').innerHTML = currentRouteInfoText ?
       ('Route: <b>' + currentRouteInfoText + '</b>' + (currentElevationInfo ? ('<br>Hoogte: <b>⬆ ' + currentElevationInfo.gain + ' m</b> · <b>⬇ ' + currentElevationInfo.loss + ' m</b>') : '')) : 'Nog geen route berekend.';
@@ -1348,7 +1384,7 @@
     if(n < 2) return null;
     var newest = track[n-1];
     var dist = 0, i = n - 1;
-    while(i > 0 && newest.t - track[i-1].t <= SPEED_WINDOW_MS){
+    while(i > 0 && newest.t - track[i-1].t <= SPEED_WINDOW_MS && !isTrackGap(track[i-1], track[i])){
       dist += map.distance([track[i-1].lat, track[i-1].lng], [track[i].lat, track[i].lng]);
       i--;
     }
@@ -1410,7 +1446,7 @@
     if(!last){
       track.push({ lat: lat, lng: lng, t: t });
       pendingOutlier = null;
-      polyline.setLatLngs(track.map(function(p){return [p.lat,p.lng];}));
+      redrawTrack();
       saveTrack(track);
       routeLine.bringToFront();
       refreshTrackButton(); // Fix: eerste punt — trackbar op hoofdscherm laten verschijnen (branch fix-27)
@@ -1438,7 +1474,7 @@
         pendingOutlier = null;
       }
       track.push(candidate);
-      polyline.setLatLngs(track.map(function(p){return [p.lat,p.lng];}));
+      redrawTrack();
       saveTrack(track);
       routeLine.bringToFront();
       checkWalkingSpeed(); // Fix: sneller dan wandelen? dan vragen of de opname klaar is (branch fix-33)
@@ -1665,7 +1701,7 @@
     saveSettings(settings);
     track = [];
     pendingOutlier = null;
-    polyline.setLatLngs([]);
+    redrawTrack();
     saveTrack(track);
     updateStats();
     refreshTrackButton();
@@ -1678,7 +1714,7 @@
     if(confirm('Gevolgde route wissen? Dit kan niet ongedaan worden gemaakt.')){
       track = [];
       pendingOutlier = null;
-      polyline.setLatLngs([]);
+      redrawTrack();
       saveTrack(track);
       updateStats();
       refreshTrackButton();
