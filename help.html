@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<!-- Fix: helppagina met uitleg per onderdeel van de app, met digidave-logo en link naar het overzicht (branch fix-37) -->
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Help – Locatietracker</title>
+<link rel="icon" href="favicon.ico">
+<style>
+  :root{ --bg:#0f1418; --panel:#161d24; --panel2:#1e2833; --text:#eef2f5; --muted:#8fa1ac;
+         --accent:#3ba7ff; --accent2:#37d67a; --warn:#ffb020; --border:#2a3742; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; line-height:1.55; font-size:16px; }
+  main{ max-width:720px; margin:0 auto; padding:16px 16px 40px; }
+  .top{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+  .back{ color:var(--accent); text-decoration:none; font-size:14px; }
+  .brand{ display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--text); }
+  .brand img{ width:32px; height:32px; }
+  .brand span{ font-weight:500; font-size:18px; letter-spacing:.01em; }
+  h1{ font-size:26px; margin:14px 0 6px; }
+  h2{ font-size:18px; margin:28px 0 6px; padding-top:6px; border-top:1px solid var(--border); }
+  p,li{ color:var(--text); }
+  .lead,.muted{ color:var(--muted); }
+  ul,ol{ padding-left:22px; margin:6px 0; }
+  li{ margin:3px 0; }
+  .card{ background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin:10px 0; }
+  .warn{ border-color:var(--warn); }
+  nav.toc{ display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 4px; }
+  nav.toc a{ background:var(--panel2); border:1px solid var(--border); color:var(--text); text-decoration:none;
+    padding:6px 10px; border-radius:999px; font-size:13px; }
+  a{ color:var(--accent); }
+  .dot{ display:inline-block; width:12px; height:12px; border-radius:50%; vertical-align:-1px; margin-right:4px; }
+  footer{ margin-top:34px; padding-top:14px; border-top:1px solid var(--border); display:flex; align-items:center;
+    justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <a class="back" id="backLink" href="index.html">&larr; Terug naar de kaart</a>
+    <a class="brand" href="https://bruindav.github.io/DigidaveStore/" target="_blank" rel="noopener" title="Naar het overzicht van al mijn apps">
+      <img src="icons/digidave-logo.png" alt="" width="32" height="32"><span>digidave</span>
+    </a>
+  </div>
+
+  <h1>Help</h1>
+  <p class="lead">Locatietracker laat altijd zien waar je bent en legt de route vast die je loopt, fietst of rijdt. Je kunt ook routes plannen en alles opslaan om later terug te kijken.</p>
+  <nav class="toc">
+    <a href="#start">Aan de slag</a><a href="#spoor">Spoor opnemen</a><a href="#route">Route plannen</a>
+    <a href="#pijl">De pijl</a><a href="#opslaan">Opgeslagen</a><a href="#kaart">Kaarttypes</a><a href="#problemen">Problemen</a>
+  </nav>
+
+  <h2 id="start">Aan de slag</h2>
+  <ul>
+    <li>Sta bij de eerste keer <b>locatietoegang</b> toe. Zonder toestemming kan de app je positie niet tonen.</li>
+    <li>Je positie staat als blauwe stip met een pijl op de kaart. Tik op <b>📍</b> rechtsonder om terug naar jezelf te gaan.</li>
+    <li>Het <b>menu</b> (☰ linksboven) bevat alle instellingen, je opgeslagen routes en sporen en het kaarttype.</li>
+    <li>Het bolletje met <b>N</b> linksonder wijst naar het noorden; de kaart draait niet mee.</li>
+  </ul>
+
+  <h2 id="spoor">Een spoor opnemen</h2>
+  <ol>
+    <li>Tik onderin op <b>▶️ Start spoor</b>. De opname begint op <b>lopen</b>.</li>
+    <li>Tijdens de opname staat onderin een balk met de afstand en vier knoppen:
+      <ul>
+        <li><b>🚶 / 🚴 / 🚗</b> &ndash; vervoerswijze; elke tik gaat naar de volgende (lopen, fietsen, auto, weer lopen).</li>
+        <li><b>⏸️</b> &ndash; pauzeren en weer hervatten.</li>
+        <li><b>⏹️</b> &ndash; stoppen; de app vraagt meteen of je het spoor wilt opslaan.</li>
+        <li><b>✖️</b> &ndash; afbreken zonder op te slaan (met een bevestiging, want dit kan niet ongedaan worden gemaakt).</li>
+      </ul>
+    </li>
+    <li>Is er al een spoor en tik je op <b>▶️ Nieuw spoor</b>, dan kies je eerst of het huidige spoor wordt opgeslagen of weggegooid.</li>
+  </ol>
+  <div class="card">
+    <b>Automatische meldingen</b>
+    <ul>
+      <li>Ga je tijdens <b>lopen</b> structureel sneller dan 6&nbsp;km/u (gemiddeld over het laatste half minuut), dan vraagt de app of de opname beëindigd moet worden. Geef je binnen 30 seconden geen antwoord, dan wordt de opname gepauzeerd.</li>
+      <li>Een spoor waar <b>2 uur lang niets aan veranderd</b> is, wordt automatisch opgeslagen en beëindigd.</li>
+      <li>Als er een tijdje geen GPS-signaal was, tekent de app geen rechte lijn over het gat, maar een <b>gestippelde grijze lijn</b>. Dat stuk telt niet mee in de afstand.</li>
+    </ul>
+  </div>
+
+  <h2 id="route">Een route plannen</h2>
+  <ol>
+    <li>Open het menu en tik op <b>➕ Nieuwe route plannen</b>. Onderin verschijnt de plan-balk.</li>
+    <li>Tik op de kaart: de eerste tik is het <b>startpunt</b>, elke volgende tik een extra punt. De route wordt berekend langs wegen en paden die bij je vervoerswijze passen (lopen, fietsen of auto).</li>
+    <li>Wil je terug naar het startpunt, tik dan op <b>🔁 Rondje</b>.</li>
+    <li>Sleep een punt om het te verplaatsen. Houd een punt lang ingedrukt om het te verwijderen.</li>
+    <li>Tik op <b>✔️ Klaar</b>. De hulpmiddelen verdwijnen en je kunt <b>💾 opslaan</b>, <b>✏️ wijzigen</b> (de hulpmiddelen komen terug) of een <b>➕ nieuwe route</b> beginnen. Met <b>✖️</b> sluit je de balk zonder op te slaan.</li>
+  </ol>
+  <p class="muted">Afstand en hoogtemeters (omhoog en omlaag) zijn een benadering. De hoogtegegevens hebben een lage resolutie.</p>
+
+  <h2 id="pijl">De pijl op de kaart</h2>
+  <p>Zodra er een route is, kleurt de pijl mee met de richting waarin je beweegt:</p>
+  <ul>
+    <li><span class="dot" style="background:#3ba7ff"></span><b>Blauw</b> &ndash; geen betrouwbare vergelijking met de route (je staat stil of bent ver van de route).</li>
+    <li><span class="dot" style="background:#ffb020"></span><b>Oranje</b> &ndash; je loopt in de richting van de route.</li>
+    <li><span class="dot" style="background:#ff5c5c"></span><b>Rood, knipperend</b> &ndash; je loopt de verkeerde kant op.</li>
+  </ul>
+  <p class="muted">Tijdens het tracken schuift de kaart mee zodra je dicht bij de rand komt.</p>
+
+  <h2 id="opslaan">Routes en sporen opslaan</h2>
+  <ul>
+    <li>Bij het opslaan geef je een <b>naam</b>, een <b>datum</b> en de <b>vervoerswijze</b> op.</li>
+    <li>In het menu onder <b>Opgeslagen routes &amp; sporen</b> kun je ze later weer laden of verwijderen.</li>
+    <li>Alles wordt <b>alleen op je eigen apparaat</b> bewaard (zie <a href="privacy.html">Privacy</a>). Maak je de gegevens van de browser leeg of verwijder je de app, dan zijn ze weg.</li>
+  </ul>
+
+  <h2 id="kaart">Kaarttypes</h2>
+  <ul>
+    <li><b>Straat</b> &ndash; gewone wegenkaart.</li>
+    <li><b>Topografisch</b> &ndash; met hoogtelijnen.</li>
+    <li><b>Satelliet</b> &ndash; luchtfoto.</li>
+    <li><b>Fietsen (fietsroutes)</b> &ndash; kaart voor fietsers; blauwe lijnen en genummerde cirkels zijn bewegwijzerde fietsroutes en knooppunten.</li>
+    <li><b>Wandelen (wandelroutes)</b> &ndash; gekleurde lijnen zijn bewegwijzerde wandelroutes.</li>
+  </ul>
+  <p class="muted">De uitleg bij het gekozen kaarttype staat ook in het menu, direct onder de keuzelijst.</p>
+
+  <h2 id="problemen">Problemen oplossen</h2>
+  <div class="card">
+    <b>Mijn spoor heeft gaten of rechte lijnen</b>
+    <p>Dan kwamen er geen locatiegegevens binnen, vaak omdat het scherm uit stond of de telefoon de app afremt. In de Android-app:</p>
+    <ul>
+      <li>Zet de locatietoegang op <b>Altijd toestaan</b> (Instellingen &rarr; Apps &rarr; Locatietracker &rarr; Machtigingen &rarr; Locatie).</li>
+      <li>Zet de batterij op <b>Niet beperken / niet optimaliseren</b> voor Locatietracker.</li>
+      <li>Veeg de melding &ldquo;Locatietracker actief&rdquo; niet weg tijdens een opname.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>Mijn positie klopt niet of springt</b>
+    <p>In bos, tussen hoge gebouwen of binnen is GPS minder nauwkeurig. De app filtert onwaarschijnlijke sprongen, maar kan niet alles herstellen. Een lichte cirkel om je stip toont de onnauwkeurigheid.</p>
+  </div>
+  <div class="card">
+    <b>De route kan niet worden berekend</b>
+    <p>De app heeft internet nodig om een route en hoogtemeters op te halen en om kaartdelen te laden. Het opnemen van een spoor werkt ook zonder internet, mits de locatie beschikbaar is.</p>
+  </div>
+
+  <h2>Vragen of een reactie?</h2>
+  <p>Heb je een vraag, een idee of wil je een reactie achterlaten? Dat kan via het <a href="https://bruindav.github.io/DigidaveStore/" target="_blank" rel="noopener">overzicht van al mijn apps</a>, bij Locatietracker. Lees ook de <a href="privacy.html">privacyverklaring en disclaimer</a>.</p>
+
+  <footer>
+    <a class="brand" href="https://bruindav.github.io/DigidaveStore/" target="_blank" rel="noopener">
+      <img src="icons/digidave-logo.png" alt="" width="28" height="28"><span>digidave</span>
+    </a>
+    <span>Locatietracker &middot; <a href="help.html">Help</a> &middot; <a href="privacy.html">Privacy &amp; disclaimer</a></span>
+  </footer>
+</main>
+<script>
+  // In de app wordt deze pagina in een venster boven de kaart getoond; de kaart (en een lopende
+  // opname) blijft dan gewoon doorlopen. Alleen als losse pagina is de terug-link nodig.
+  if(window.self !== window.top){ document.getElementById('backLink').style.display = 'none'; }
+</script>
+</body>
+</html>

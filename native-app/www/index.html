@@ -1,6 +1,6 @@
-<!-- Fix: kaartlaag "Fiets/Wandel" (was een pure fietskaart) opgesplitst in "Fietsen (fietsroutes)" en
-     "Wandelen (wandelroutes)", met onder de keuzelijst uitleg wat de lijnen en cirkels betekenen
-     (branch fix-36) -->
+<!-- Fix: helppagina (help.html) en privacy- & disclaimerpagina (privacy.html), te openen vanuit het
+     menu onder "Over deze app" in een venster boven de kaart (een lopende opname blijft doorlopen),
+     plus het digidave-logo met link naar het overzicht van al mijn apps (branch fix-37) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -253,6 +253,26 @@
     box-shadow:0 4px 14px rgba(0,0,0,0.45); white-space:nowrap;
   }
   .startpill:active{ transform:translateX(-50%) scale(0.96); }
+  /* Fix: help- en privacy-venster boven de kaart, zodat de kaart en een lopende opname doorlopen (branch fix-37) */
+  .infoview{
+    position:fixed; inset:0; z-index:7000; display:none; flex-direction:column; background:var(--bg);
+  }
+  .infoview.show{ display:flex; }
+  .infoview-bar{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px; border-bottom:1px solid var(--border); background:var(--panel);
+  }
+  .infoview-bar b{ font-size:15px; }
+  .infoview-bar button{
+    border:1px solid var(--border); background:var(--panel2); color:var(--text);
+    border-radius:10px; padding:8px 12px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .infoview iframe{ flex:1; width:100%; border:0; background:var(--bg); }
+  .drawer-brand{
+    display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--text); margin-top:14px;
+  }
+  .drawer-brand img{ width:28px; height:28px; }
+  .drawer-brand span{ font-weight:500; font-size:16px; letter-spacing:.01em; }
   .north-badge{
     position:absolute; left:14px; bottom:20px; z-index:1000;
     width:44px; height:44px; border-radius:50%; background:rgba(22,29,36,0.92); border:1px solid var(--border);
@@ -412,6 +432,25 @@
     <h2>Locatie &amp; richting</h2>
     <div class="stat-line" id="locStat"></div>
   </section>
+
+  <!-- Fix: help, privacy en disclaimer + digidave-logo met link naar het overzicht (branch fix-37) -->
+  <section>
+    <h2>Over deze app</h2>
+    <button class="dbtn" id="btnHelp">❓ Help</button>
+    <button class="dbtn" id="btnPrivacy">🔒 Privacy &amp; disclaimer</button>
+    <a class="drawer-brand" href="https://bruindav.github.io/DigidaveStore/" target="_blank" rel="noopener" title="Naar het overzicht van al mijn apps">
+      <img src="icons/digidave-logo.png" alt="" width="28" height="28"><span>digidave</span>
+    </a>
+    <div class="hint" style="margin-top:6px;">Alle apps van digidave op één pagina.</div>
+  </section>
+</div>
+
+<div class="infoview" id="infoView">
+  <div class="infoview-bar">
+    <b id="infoViewTitle">Help</b>
+    <button type="button" id="infoViewClose">✕ Sluiten</button>
+  </div>
+  <iframe id="infoViewFrame" title="Help"></iframe>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -472,7 +511,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-36';
+  var APP_VERSION = 'fix-37';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -525,11 +564,30 @@
   document.getElementById('btnCloseDrawer').addEventListener('click', closeDrawer);
   backdropEl.addEventListener('click', closeDrawer);
 
+  // ---------- Fix: help- en privacy-venster (branch fix-37) ----------
+  var infoViewEl = document.getElementById('infoView');
+  var infoViewFrame = document.getElementById('infoViewFrame');
+  function openInfoView(title, src){
+    document.getElementById('infoViewTitle').textContent = title;
+    infoViewFrame.title = title;
+    infoViewFrame.src = src;
+    infoViewEl.classList.add('show');
+    closeDrawer();
+  }
+  function closeInfoView(){
+    infoViewEl.classList.remove('show');
+    infoViewFrame.removeAttribute('src');
+  }
+  document.getElementById('btnHelp').addEventListener('click', function(){ openInfoView('Help', 'help.html'); });
+  document.getElementById('btnPrivacy').addEventListener('click', function(){ openInfoView('Privacy & disclaimer', 'privacy.html'); });
+  document.getElementById('infoViewClose').addEventListener('click', closeInfoView);
+
   // ---------- Terugknop niet meteen laten afsluiten (dubbele-terug-om-te-sluiten) ----------
   var backPressArmed = false;
   var backPressTimer = null;
   history.pushState({ locatietracker: true }, '', location.href);
   window.addEventListener('popstate', function(){
+    if(infoViewEl.classList.contains('show')){ closeInfoView(); history.pushState({ locatietracker: true }, '', location.href); return; }
     if(drawerOpen){ closeDrawer(); history.pushState({ locatietracker: true }, '', location.href); return; }
     if(backPressArmed){
       return; // tweede keer binnen de tijdslimiet: laat de navigatie nu wel doorgaan

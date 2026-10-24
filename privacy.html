@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<!-- Fix: privacyverklaring en disclaimer, met digidave-logo en link naar het overzicht (branch fix-37) -->
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy &amp; disclaimer – Locatietracker</title>
+<link rel="icon" href="favicon.ico">
+<style>
+  :root{ --bg:#0f1418; --panel:#161d24; --panel2:#1e2833; --text:#eef2f5; --muted:#8fa1ac;
+         --accent:#3ba7ff; --accent2:#37d67a; --warn:#ffb020; --border:#2a3742; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; line-height:1.55; font-size:16px; }
+  main{ max-width:720px; margin:0 auto; padding:16px 16px 40px; }
+  .top{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+  .back{ color:var(--accent); text-decoration:none; font-size:14px; }
+  .brand{ display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--text); }
+  .brand img{ width:32px; height:32px; }
+  .brand span{ font-weight:500; font-size:18px; letter-spacing:.01em; }
+  h1{ font-size:26px; margin:14px 0 6px; }
+  h2{ font-size:18px; margin:28px 0 6px; padding-top:6px; border-top:1px solid var(--border); }
+  p,li{ color:var(--text); }
+  .lead,.muted{ color:var(--muted); }
+  ul,ol{ padding-left:22px; margin:6px 0; }
+  li{ margin:3px 0; }
+  .card{ background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin:10px 0; }
+  .warn{ border-color:var(--warn); }
+  nav.toc{ display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 4px; }
+  nav.toc a{ background:var(--panel2); border:1px solid var(--border); color:var(--text); text-decoration:none;
+    padding:6px 10px; border-radius:999px; font-size:13px; }
+  a{ color:var(--accent); }
+  .dot{ display:inline-block; width:12px; height:12px; border-radius:50%; vertical-align:-1px; margin-right:4px; }
+  footer{ margin-top:34px; padding-top:14px; border-top:1px solid var(--border); display:flex; align-items:center;
+    justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <a class="back" id="backLink" href="index.html">&larr; Terug naar de kaart</a>
+    <a class="brand" href="https://bruindav.github.io/DigidaveStore/" target="_blank" rel="noopener" title="Naar het overzicht van al mijn apps">
+      <img src="icons/digidave-logo.png" alt="" width="32" height="32"><span>digidave</span>
+    </a>
+  </div>
+
+  <h1>Privacy &amp; disclaimer</h1>
+  <p class="muted">Laatst bijgewerkt: 24 oktober 2026</p>
+
+  <h2>Kort samengevat</h2>
+  <div class="card">
+    <ul>
+      <li>Je locatie, je opgenomen sporen en je routes blijven <b>op je eigen apparaat</b>. Locatietracker heeft geen account, geen eigen server en stuurt je sporen nergens naartoe.</li>
+      <li>Er is <b>geen advertentie- of analysesoftware</b> en er worden geen profielen opgebouwd.</li>
+      <li>Voor kaarten, routeberekening en hoogtegegevens vraagt de app wél gegevens op bij diensten van derden (zie hieronder).</li>
+    </ul>
+  </div>
+
+  <h2>Welke gegevens worden gebruikt</h2>
+  <ul>
+    <li><b>Je locatie</b> &ndash; gebruikt om je positie te tonen en een spoor vast te leggen. In de Android-app gebeurt dat ook op de achtergrond, met een zichtbare melding &ldquo;Locatietracker actief&rdquo;, zodat de opname doorloopt met het scherm uit.</li>
+    <li><b>Opgenomen sporen, geplande routes, opgeslagen items en instellingen</b> (zoals kaarttype en vervoerswijze) &ndash; bewaard in de lokale opslag van de browser of app op je apparaat.</li>
+  </ul>
+
+  <h2>Diensten van derden</h2>
+  <p>Om de app te laten werken, maakt je apparaat verbinding met onderstaande diensten. Die zien daarbij onvermijdelijk je <b>IP-adres</b> en de gegevens die voor het verzoek nodig zijn. Elke dienst heeft een eigen privacybeleid.</p>
+  <ul>
+    <li><b>Kaartafbeeldingen</b> &ndash; OpenStreetMap, OpenTopoMap, CyclOSM, Waymarked Trails en Esri (satelliet), afhankelijk van het gekozen kaarttype. Zij zien welk kaartgebied je bekijkt, dus ongeveer waar je zoekt of bent.</li>
+    <li><b>Routeberekening</b> &ndash; routing.openstreetmap.de. Dit ontvangt de <b>punten van de route die je plant</b>. Je opgenomen spoor wordt niet verstuurd.</li>
+    <li><b>Hoogtemeters</b> &ndash; Open-Meteo. Dit ontvangt coördinaten langs de geplande route.</li>
+    <li><b>Kaartbibliotheek</b> &ndash; Leaflet wordt geladen via cdnjs (Cloudflare).</li>
+  </ul>
+  <p class="muted">De gegevens van je eigen positie en je opgenomen spoor gaan niet naar deze diensten, behalve wat hierboven staat. Gebruik je een kaart, dan raakt het kaartgebied rond je positie wel bekend bij de kaartaanbieder.</p>
+
+  <h2>Je gegevens bekijken en verwijderen</h2>
+  <ul>
+    <li>Een spoor wis je met <b>🗑️ Wis spoor</b> in het menu of met <b>✖️</b> op de opnamebalk.</li>
+    <li>Opgeslagen routes en sporen verwijder je in het menu bij <b>Opgeslagen routes &amp; sporen</b>.</li>
+    <li>Alles in één keer: verwijder de app, of wis de websitegegevens van Locatietracker in je browser.</li>
+    <li>Locatietoegang trek je altijd in via de instellingen van je telefoon of browser.</li>
+  </ul>
+
+  <h2>Disclaimer</h2>
+  <div class="card warn">
+    <p><b>Gebruik op eigen risico.</b> Locatietracker is een hobbyproject en wordt geleverd zoals het is, zonder garanties.</p>
+    <ul>
+      <li><b>Nauwkeurigheid</b> &ndash; GPS kan afwijken, zeker in bos, in de stad of bij slecht weer. Afstand, snelheid en hoogtemeters zijn benaderingen.</li>
+      <li><b>Routes</b> &ndash; geplande routes komen uit openbare kaartgegevens (OpenStreetMap) en kunnen onvolledig, verouderd of onjuist zijn. Paden kunnen afgesloten, onbegaanbaar of privé zijn. Controleer de situatie ter plekke.</li>
+      <li><b>Geen navigatie voor kritieke situaties</b> &ndash; gebruik de app niet als enige hulpmiddel in situaties waar fouten gevaarlijk zijn, zoals in de bergen, op het water, bij slecht weer of in het verkeer.</li>
+      <li><b>Verkeer</b> &ndash; bedien de app niet tijdens het rijden of fietsen en houd je aan de verkeersregels.</li>
+      <li><b>Batterij en data</b> &ndash; continu locatie gebruiken kost accu en kan mobiele data kosten.</li>
+      <li><b>Beschikbaarheid</b> &ndash; de app en de diensten van derden kunnen zonder bericht wijzigen, tijdelijk niet werken of verdwijnen. Bewaar belangrijke sporen dus niet alleen in de app.</li>
+      <li><b>Aansprakelijkheid</b> &ndash; de maker is niet aansprakelijk voor schade die voortkomt uit het gebruik van de app of uit onjuiste of ontbrekende gegevens.</li>
+    </ul>
+  </div>
+
+  <h2>Contact</h2>
+  <p>Vragen over privacy of de app? Gebruik het <a href="https://bruindav.github.io/DigidaveStore/" target="_blank" rel="noopener">overzicht van al mijn apps</a> (digidave), bij Locatietracker. Kijk voor gebruikstips ook bij de <a href="help.html">Help</a>.</p>
+
+  <footer>
+    <a class="brand" href="https://bruindav.github.io/DigidaveStore/" target="_blank" rel="noopener">
+      <img src="icons/digidave-logo.png" alt="" width="28" height="28"><span>digidave</span>
+    </a>
+    <span>Locatietracker &middot; <a href="help.html">Help</a> &middot; <a href="privacy.html">Privacy &amp; disclaimer</a></span>
+  </footer>
+</main>
+<script>
+  // In de app wordt deze pagina in een venster boven de kaart getoond; de kaart (en een lopende
+  // opname) blijft dan gewoon doorlopen. Alleen als losse pagina is de terug-link nodig.
+  if(window.self !== window.top){ document.getElementById('backLink').style.display = 'none'; }
+</script>
+</body>
+</html>
