@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Fix: helppagina met uitleg per onderdeel van de app, met digidave-logo en link naar het overzicht (branch fix-37) -->
+<!-- Fix: helppagina met uitleg per onderdeel van de app, met digidave-logo en link naar het overzicht (branch fix-37); aparte sectie over de Android-app (apk) met installatiestappen voor als de webapp de verbinding verliest (branch fix-38) -->
 <html lang="nl">
 <head>
 <meta charset="utf-8">
@@ -31,6 +31,10 @@
     padding:6px 10px; border-radius:999px; font-size:13px; }
   a{ color:var(--accent); }
   .dot{ display:inline-block; width:12px; height:12px; border-radius:50%; vertical-align:-1px; margin-right:4px; }
+  pre{ background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:8px 10px; overflow-x:auto;
+       font-size:13px; margin:6px 0; }
+  code{ background:var(--panel2); border-radius:4px; padding:1px 5px; font-size:13px; }
+  pre code{ background:none; padding:0; }
   footer{ margin-top:34px; padding-top:14px; border-top:1px solid var(--border); display:flex; align-items:center;
     justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:13px; color:var(--muted); }
 </style>
@@ -48,7 +52,7 @@
   <p class="lead">Locatietracker laat altijd zien waar je bent en legt de route vast die je loopt, fietst of rijdt. Je kunt ook routes plannen en alles opslaan om later terug te kijken.</p>
   <nav class="toc">
     <a href="#start">Aan de slag</a><a href="#spoor">Spoor opnemen</a><a href="#route">Route plannen</a>
-    <a href="#pijl">De pijl</a><a href="#opslaan">Opgeslagen</a><a href="#kaart">Kaarttypes</a><a href="#problemen">Problemen</a>
+    <a href="#pijl">De pijl</a><a href="#opslaan">Opgeslagen</a><a href="#kaart">Kaarttypes</a><a href="#android">Android-app</a><a href="#problemen">Problemen</a>
   </nav>
 
   <h2 id="start">Aan de slag</h2>
@@ -117,10 +121,61 @@
   </ul>
   <p class="muted">De uitleg bij het gekozen kaarttype staat ook in het menu, direct onder de keuzelijst.</p>
 
+  <h2 id="android">Android-app (apk) voor betrouwbaar opnemen</h2>
+  <div class="card warn">
+    <b>De webapp kan de verbinding met je locatie verliezen.</b>
+    <p>Een website in de browser wordt door Android afgeremd of gepauzeerd zodra het scherm uit gaat of je naar een andere app wisselt. Je spoor krijgt dan gaten. Voor serieus opnemen is er daarom een <b>Android-app</b> (apk). Die blijft de locatie op de achtergrond doorgeven, met een melding &ldquo;Locatietracker actief&rdquo;. De app moet <b>vanaf een laptop</b> op je telefoon worden geïnstalleerd; hij staat niet in de Play Store.</p>
+  </div>
+
+  <p><b>Eenmalig voorbereiden</b></p>
+  <ol>
+    <li>Installeer op je laptop <a href="https://nodejs.org" target="_blank" rel="noopener">Node.js</a> (LTS-versie), <a href="https://git-scm.com" target="_blank" rel="noopener">Git</a> en <a href="https://developer.android.com/studio" target="_blank" rel="noopener">Android Studio</a>. Android Studio installeert ook de Android SDK.</li>
+    <li>Zet op je telefoon <b>USB-foutopsporing</b> aan: Instellingen &rarr; Over de telefoon &rarr; tik 7 keer op <i>Buildnummer</i> &rarr; terug naar Instellingen &rarr; <i>Ontwikkelaarsopties</i> &rarr; USB-foutopsporing aan.</li>
+  </ol>
+
+  <p><b>De app installeren</b></p>
+  <ol>
+    <li>Open een terminal (opdrachtprompt of PowerShell) en haal de code op:
+      <pre>git clone https://github.com/bruindav/locatietracker.git
+cd locatietracker/native-app</pre></li>
+    <li>Voer deze opdrachten uit, één voor één:
+      <pre>npm install
+npm run build:plugins
+npx cap sync android
+npx cap open android</pre>
+      Android Studio opent nu het project.</li>
+    <li>Wacht tot Gradle klaar is met synchroniseren (de eerste keer kan dat even duren).
+      <br><span class="muted">Staat er een melding over de &ldquo;Gradle JVM&rdquo;? Kies dan bij Settings &rarr; Build Tools &rarr; Gradle de ingebouwde JDK 21 (jbr-21).</span></li>
+    <li>Sluit je telefoon met een USB-kabel aan en tik op de telefoon op <b>Toestaan</b> bij de vraag om USB-foutopsporing.</li>
+    <li>Kies bovenin Android Studio je telefoon en klik op <b>&#9654; Run</b>. De app wordt geïnstalleerd en gestart.</li>
+  </ol>
+
+  <p><b>Na het installeren, op je telefoon</b></p>
+  <ul>
+    <li>Kies bij de eerste vraag <b>Toestaan tijdens gebruik</b> en zet de locatietoegang daarna op <b>Altijd toestaan</b>: Instellingen &rarr; Apps &rarr; Locatietracker &rarr; Machtigingen &rarr; Locatie.</li>
+    <li>Zet de batterij op <b>Niet beperken</b> (of niet optimaliseren) voor Locatietracker, anders kan Android de opname toch afremmen.</li>
+    <li>Veeg de melding &ldquo;Locatietracker actief&rdquo; niet weg tijdens een opname.</li>
+  </ul>
+
+  <p><b>Bijwerken naar een nieuwe versie</b></p>
+  <ol>
+    <li>Ga in de terminal naar <code>locatietracker/native-app</code>.</li>
+    <li>Voer <code>git pull</code> en daarna <code>npx cap sync android</code> uit.</li>
+    <li>Klik in Android Studio opnieuw op <b>&#9654; Run</b>. De versie staat linksboven in het menu van de app.</li>
+  </ol>
+  <p class="muted">Let op: sporen en routes die je in de webversie hebt opgeslagen staan niet in de Android-app, en andersom. Elke versie bewaart zijn eigen gegevens op je telefoon.</p>
+
+  <p><b>Een apk-bestand maken om te delen (optioneel)</b></p>
+  <ol>
+    <li>Kies in Android Studio <b>Build &rarr; Build Bundle(s) / APK(s) &rarr; Build APK(s)</b>.</li>
+    <li>Het bestand staat daarna in <code>native-app/android/app/build/outputs/apk/debug/app-debug.apk</code>.</li>
+    <li>Zet het bestand op een telefoon en open het daar. Android vraagt dan eenmalig om installatie van apps uit onbekende bronnen toe te staan.</li>
+  </ol>
+
   <h2 id="problemen">Problemen oplossen</h2>
   <div class="card">
     <b>Mijn spoor heeft gaten of rechte lijnen</b>
-    <p>Dan kwamen er geen locatiegegevens binnen, vaak omdat het scherm uit stond of de telefoon de app afremt. In de Android-app:</p>
+    <p>Dan kwamen er geen locatiegegevens binnen, vaak omdat het scherm uit stond of de telefoon de app afremt. In de webversie gebeurt dit snel: gebruik daarvoor de <a href="#android">Android-app</a>. In de Android-app:</p>
     <ul>
       <li>Zet de locatietoegang op <b>Altijd toestaan</b> (Instellingen &rarr; Apps &rarr; Locatietracker &rarr; Machtigingen &rarr; Locatie).</li>
       <li>Zet de batterij op <b>Niet beperken / niet optimaliseren</b> voor Locatietracker.</li>
