@@ -1,5 +1,5 @@
-<!-- Fix: de spoorbalk toont nu de reden als de opname automatisch is gepauzeerd, zodat bij een
-     onverwachte pauze duidelijk is waardoor het kwam (branch fix-40) -->
+<!-- Fix: in de webversie een waarschuwing bij het starten van een spoor (kan op de achtergrond stoppen, daarvoor is
+     de Android-app) en een melding als de pagina tijdens een opname op de achtergrond heeft gestaan (branch fix-41) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -501,6 +501,18 @@
   </div>
 </div>
 
+<!-- Fix: waarschuwing in de webversie dat de opname kan stoppen op de achtergrond (branch fix-41) -->
+<div class="modal-backdrop" id="webWarnBackdrop">
+  <div class="modal-card">
+    <h3>⚠️ Je gebruikt de webversie</h3>
+    <div class="hint" style="margin:0;">De webversie kan de locatie verliezen zodra het scherm uit gaat of je naar een andere app gaat (bijvoorbeeld de camera). Dan ontbreekt een stuk van je spoor. Prima om iets snel te testen; voor een echte wandeling of fietstocht is de Android-app (apk) betrouwbaarder.</div>
+    <div class="modal-actions">
+      <button type="button" id="webWarnHelp">Hoe installeer ik de app?</button>
+      <button type="button" id="webWarnOk" class="primary">Begrepen</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <!-- Fix: pluginbundel voor achtergrondlocatie — bestaat alleen in de native-app build
      (gegenereerd met "npm run build:plugins"); ontbreekt op de website en faalt dan
@@ -510,7 +522,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-40';
+  var APP_VERSION = 'fix-41';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1786,7 +1798,7 @@
     showToast(isTracking ? 'Spoor wordt opgenomen' : 'Spoor gepauzeerd');
     // Fix: bij het (opnieuw) starten van de opname het zijmenu sluiten, zodat de
     // kaart meteen zichtbaar is (branch fix-31)
-    if(isTracking){ closeDrawer(); }
+    if(isTracking){ closeDrawer(); maybeShowWebWarning(); }
   }
 
   btnTrack.addEventListener('click', toggleTracking);
@@ -1891,6 +1903,35 @@
     if(document.visibilityState === 'visible') autoEndStaleTrack();
   });
   autoEndStaleTrack();
+
+  // ---------- Fix: waarschuwing in de webversie (branch fix-41) ----------
+  // De native app (Capacitor) blijft op de achtergrond doorgaan; de browserversie niet.
+  var IS_NATIVE_APP = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  var webWarnBackdrop = document.getElementById('webWarnBackdrop');
+  var webWarnShown = false;
+  function maybeShowWebWarning(){
+    if(IS_NATIVE_APP || webWarnShown) return;
+    webWarnShown = true; // één keer per keer dat de pagina geladen wordt
+    webWarnBackdrop.classList.add('show');
+  }
+  document.getElementById('webWarnOk').addEventListener('click', function(){
+    webWarnBackdrop.classList.remove('show');
+  });
+  document.getElementById('webWarnHelp').addEventListener('click', function(){
+    webWarnBackdrop.classList.remove('show');
+    openInfoView('Help', 'help.html#android');
+  });
+  // Terug in beeld na een tijd op de achtergrond, terwijl er werd opgenomen: dan mist er mogelijk spoor.
+  var webHiddenAt = 0;
+  document.addEventListener('visibilitychange', function(){
+    if(IS_NATIVE_APP) return;
+    if(document.visibilityState === 'hidden'){
+      webHiddenAt = isTracking ? Date.now() : 0;
+    } else if(webHiddenAt && isTracking && Date.now() - webHiddenAt > 15000){
+      webHiddenAt = 0;
+      showToast('De webversie stond op de achtergrond: er kan een stuk van het spoor ontbreken (gestippeld).');
+    }
+  });
 
   // Fix: opname direct afbreken zonder op te slaan, met bevestiging omdat dit
   // niet ongedaan te maken is (branch fix-30)
