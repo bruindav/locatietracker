@@ -1,6 +1,5 @@
-<!-- Fix: opname werd ten onrechte gepauzeerd door de snelheidsmelding — snelheid nu gemeten als hemelsbrede
-     afstand over 45 s (GPS-ruis in bos gaf valse "te snel"), geen automatische pauze meer als het scherm
-     uit staat of de snelheid inmiddels weer normaal is (branch fix-39) -->
+<!-- Fix: de spoorbalk toont nu de reden als de opname automatisch is gepauzeerd, zodat bij een
+     onverwachte pauze duidelijk is waardoor het kwam (branch fix-40) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -511,7 +510,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-39';
+  var APP_VERSION = 'fix-40';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1482,6 +1481,7 @@
   var speedPromptOpen = false;
   var speedSnoozeUntil = 0;
   var speedPromptTimer = null;
+  var pauseReason = ''; // Fix: laat op de balk zien waarom de opname gepauzeerd is (branch fix-40)
   var speedModalBackdrop = document.getElementById('speedModalBackdrop');
   var speedModalText = document.getElementById('speedModalText');
 
@@ -1533,6 +1533,7 @@
         closeSpeedPrompt();
         if(nowKmh != null && nowKmh > WALK_MAX_KMH){
           toggleTracking(); // pauzeren
+          pauseReason = 'snelheidsmelding'; refreshTrackButton();
           showToast('Opname gepauzeerd: geen reactie op snelheidsmelding. Tik op ⏸️ om te hervatten.');
         }
         return;
@@ -1753,7 +1754,7 @@
       trackbar.classList.add('show');
       trackbar.classList.toggle('paused', !isTracking);
       trackbarIcon.textContent = isTracking ? '🔴' : '⏸️';
-      trackbarTitle.textContent = isTracking ? 'Opname loopt' : 'Gepauzeerd';
+      trackbarTitle.textContent = isTracking ? 'Opname loopt' : (pauseReason ? 'Gepauzeerd (' + pauseReason + ')' : 'Gepauzeerd');
       var dist = trackDistanceMeters();
       trackbarDist.textContent = dist >= 1000 ? (dist/1000).toFixed(2)+' km' : Math.round(dist)+' m';
     } else {
@@ -1771,6 +1772,7 @@
     // "lopen" — daarna kun je 'm via het icoon op de balk zelf omzetten (branch fix-32)
     var startingFresh = !isTracking && track.length === 0;
     isTracking = !isTracking;
+    pauseReason = ''; // handmatige wissel: geen automatische reden meer
     if(isTracking && startingFresh){
       travelMode = 'foot';
       settings.travelMode = travelMode;
