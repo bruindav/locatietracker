@@ -1,6 +1,6 @@
-<!-- Fix: helppagina (help.html) en privacy- & disclaimerpagina (privacy.html), te openen vanuit het
-     menu onder "Over deze app" in een venster boven de kaart (een lopende opname blijft doorlopen),
-     plus het digidave-logo met link naar het overzicht van al mijn apps (branch fix-37) -->
+<!-- Fix: opname werd ten onrechte gepauzeerd door de snelheidsmelding — snelheid nu gemeten als hemelsbrede
+     afstand over 45 s (GPS-ruis in bos gaf valse "te snel"), geen automatische pauze meer als het scherm
+     uit staat of de snelheid inmiddels weer normaal is (branch fix-39) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -511,7 +511,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-37';
+  var APP_VERSION = 'fix-39';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1475,8 +1475,8 @@
   // Gemiddelde snelheid over het laatste halve minuutje van het spoor (niet over één GPS-fix,
   // want die schiet er door ruis zo uit). Alleen bij vervoerswijze "lopen".
   var WALK_MAX_KMH = 6;
-  var SPEED_WINDOW_MS = 30000;      // kijk naar het laatste half minuut
-  var SPEED_MIN_SPAN_MS = 12000;    // en wacht minstens zoveel data af voor we iets zeggen
+  var SPEED_WINDOW_MS = 45000;      // kijk naar de laatste 45 seconden (fix-39: was 30)
+  var SPEED_MIN_SPAN_MS = 30000;    // en wacht minstens zoveel data af voor we iets zeggen (fix-39: was 12)
   var SPEED_PROMPT_TIMEOUT_S = 30;  // zonder antwoord: opname pauzeren
   var SPEED_SNOOZE_MS = 5 * 60 * 1000; // na "Doorgaan" een tijd niet opnieuw vragen
   var speedPromptOpen = false;
@@ -1489,13 +1489,16 @@
     var n = track.length;
     if(n < 2) return null;
     var newest = track[n-1];
-    var dist = 0, i = n - 1;
+    var i = n - 1;
     while(i > 0 && newest.t - track[i-1].t <= SPEED_WINDOW_MS && !isTrackGap(track[i-1], track[i])){
-      dist += map.distance([track[i-1].lat, track[i-1].lng], [track[i].lat, track[i].lng]);
       i--;
     }
     var span = newest.t - track[i].t;
     if(span < SPEED_MIN_SPAN_MS) return null;
+    // Fix (fix-39): hemelsbrede afstand tussen begin en eind van het venster i.p.v. de som van alle
+    // losse stukjes. GPS-ruis (zeker in bos) laat die som veel te hoog uitvallen, waardoor gewoon
+    // wandelen als "te snel" werd gezien en de opname ten onrechte werd gepauzeerd.
+    var dist = map.distance([track[i].lat, track[i].lng], [newest.lat, newest.lng]);
     return (dist / (span / 1000)) * 3.6;
   }
 
@@ -1512,18 +1515,26 @@
 
   function openSpeedPrompt(kmh){
     speedPromptOpen = true;
-    var secondsLeft = SPEED_PROMPT_TIMEOUT_S;
-    speedModalText.textContent = speedPromptText(kmh, secondsLeft);
+    var deadline = Date.now() + SPEED_PROMPT_TIMEOUT_S * 1000;
+    speedModalText.textContent = speedPromptText(kmh, SPEED_PROMPT_TIMEOUT_S);
     speedModalBackdrop.classList.add('show');
     if(navigator.vibrate){ try { navigator.vibrate([200, 100, 200]); } catch(e){} }
     speedPromptTimer = setInterval(function(){
       // Ondertussen zelf gepauzeerd of van vervoerswijze gewisseld? Dan is de vraag achterhaald.
       if(!isTracking || travelMode !== 'foot'){ closeSpeedPrompt(); return; }
-      secondsLeft--;
+      // Fix (fix-39): scherm uit / app op de achtergrond = niemand kan antwoorden. Dan loopt de
+      // opname gewoon door en begint de afteltijd opnieuw zodra de app weer zichtbaar is.
+      if(document.hidden){ deadline = Date.now() + SPEED_PROMPT_TIMEOUT_S * 1000; return; }
+      var secondsLeft = Math.ceil((deadline - Date.now()) / 1000);
       if(secondsLeft <= 0){
+        // Pas pauzeren als je op dit moment nog steeds te snel gaat; was het een uitschieter, dan
+        // sluit de melding stilletjes en loopt de opname door.
+        var nowKmh = recentTrackSpeedKmh();
         closeSpeedPrompt();
-        toggleTracking(); // pauzeren
-        showToast('Opname gepauzeerd: geen reactie op snelheidsmelding');
+        if(nowKmh != null && nowKmh > WALK_MAX_KMH){
+          toggleTracking(); // pauzeren
+          showToast('Opname gepauzeerd: geen reactie op snelheidsmelding. Tik op ⏸️ om te hervatten.');
+        }
         return;
       }
       speedModalText.textContent = speedPromptText(kmh, secondsLeft);
