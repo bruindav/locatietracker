@@ -62,3 +62,6 @@ gewone browserlocatie), dus een simpele kopie is genoeg. Draai daarna nog wel
 - Batterijoptimalisatie van de telefoon kan achtergrond-tracking na verloop
   van tijd toch pauzeren; instellen op "Niet optimaliseren" voor Locatietracker
   voorkomt dat.
+
+
+<!-- fix-42: app-icoon in de apk even groot als het icoon van de webapp: de adaptive-icon-foreground bevat nu het volledige icon-512.png (voorheen kleiner gemaakt, dubbel verkleind door de inset). -->
