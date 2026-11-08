@@ -1,5 +1,4 @@
-<!-- Fix: in de webversie een waarschuwing bij het starten van een spoor (kan op de achtergrond stoppen, daarvoor is
-     de Android-app) en een melding als de pagina tijdens een opname op de achtergrond heeft gestaan (branch fix-41) -->
+<!-- Fix: lopen-routes via Valhalla (pedestrian, voorkeur voor paden) met OSRM als terugval (branch fix-43) -->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -522,7 +521,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = 'fix-41';
+  var APP_VERSION = 'fix-43';
   document.getElementById('versionInfo').textContent = 'Versie: ' + APP_VERSION;
 
   // ---------- Zichtbare foutmelding i.p.v. stille witte pagina ----------
@@ -1015,6 +1014,72 @@
   }
   document.getElementById('btnClearRoute').addEventListener('click', clearRoute);
 
+  // ---------- Fix (fix-43): routeproviders ----------
+  function fetchOsrmRoute(points, prof){
+    var coordStr = points.map(function(p){ return p.lng + ',' + p.lat; }).join(';');
+    var url = 'https://routing.openstreetmap.de/' + prof.server + '/route/v1/' + prof.profile + '/' +
+      coordStr + '?overview=full&geometries=geojson';
+    return fetch(url).then(function(res){
+      if(!res.ok) throw new Error('Routeserver gaf status ' + res.status);
+      return res.json();
+    }).then(function(data){
+      if(data.code !== 'Ok' || !data.routes || !data.routes.length){
+        throw new Error(data.message || 'Geen route gevonden');
+      }
+      var r = data.routes[0];
+      return {
+        coords: r.geometry.coordinates.map(function(c){ return [c[1], c[0]]; }),
+        distance: r.distance, duration: r.duration,
+        legs: (r.legs || []).map(function(l){ return { distance: l.distance }; })
+      };
+    });
+  }
+
+  // Valhalla-polyline (precisie 6) -> [[lat,lng],...]
+  function decodePolyline6(str){
+    var i = 0, lat = 0, lng = 0, out = [];
+    while(i < str.length){
+      var b, shift = 0, result = 0;
+      do { b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while(b >= 0x20);
+      lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+      shift = 0; result = 0;
+      do { b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while(b >= 0x20);
+      lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+      out.push([lat / 1e6, lng / 1e6]);
+    }
+    return out;
+  }
+
+  // Lopen via Valhalla: use_trails=1 laat de router bospaden en wandelpaden verkiezen boven
+  // wegen en trottoirs; alle punten zijn "break" zodat elk deel een eigen stuk (leg) is.
+  function fetchValhallaFoot(points){
+    var req = {
+      locations: points.map(function(p){ return { lat: p.lat, lon: p.lng, type: 'break' }; }),
+      costing: 'pedestrian',
+      costing_options: { pedestrian: { use_trails: 1, walking_speed: 5, walkway_factor: 1, sidewalk_factor: 1, alley_factor: 1 } },
+      directions_options: { units: 'kilometers', language: 'nl-NL' }
+    };
+    var url = 'https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(req));
+    return fetch(url).then(function(res){
+      if(!res.ok) throw new Error('Valhalla status ' + res.status);
+      return res.json();
+    }).then(function(data){
+      if(!data.trip || !data.trip.legs || !data.trip.legs.length) throw new Error('Geen Valhalla-route');
+      var coords = [];
+      data.trip.legs.forEach(function(leg){
+        var pts = decodePolyline6(leg.shape);
+        if(coords.length) pts.shift(); // eerste punt van elk stuk = laatste van het vorige
+        coords = coords.concat(pts);
+      });
+      return {
+        coords: coords,
+        distance: data.trip.summary.length * 1000,
+        duration: data.trip.summary.time,
+        legs: data.trip.legs.map(function(l){ return { distance: l.summary.length * 1000 }; })
+      };
+    });
+  }
+
   function calculateRoute(){
     if(routePoints.length < 2){
       routeLine.setLatLngs([]);
@@ -1036,21 +1101,16 @@
 
     var mySeq = ++routeRequestSeq;
     var prof = ROUTE_PROFILES[travelMode];
-    var coordStr = points.map(function(p){ return p.lng + ',' + p.lat; }).join(';');
-    var url = 'https://routing.openstreetmap.de/' + prof.server + '/route/v1/' + prof.profile + '/' +
-      coordStr + '?overview=full&geometries=geojson';
 
     showToast('Route berekenen (' + prof.label + ')…');
-    fetch(url).then(function(res){
-      if(!res.ok) throw new Error('Routeserver gaf status ' + res.status);
-      return res.json();
-    }).then(function(data){
+    // Fix (fix-43): lopen gaat eerst via Valhalla (pedestrian, voorkeur voor paden/trails);
+    // lukt dat niet, dan valt het terug op OSRM zoals voorheen.
+    var routePromise = (travelMode === 'foot')
+      ? fetchValhallaFoot(points).catch(function(){ return fetchOsrmRoute(points, prof); })
+      : fetchOsrmRoute(points, prof);
+    routePromise.then(function(route){
       if(mySeq !== routeRequestSeq) return; // inmiddels een nieuwere aanvraag gestart
-      if(data.code !== 'Ok' || !data.routes || !data.routes.length){
-        throw new Error(data.message || 'Geen route gevonden');
-      }
-      var route = data.routes[0];
-      var coords = route.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
+      var coords = route.coords;
       routeLine.setLatLngs(coords);
       routeLine.bringToFront(); // garandeert dat de route altijd zichtbaar boven het spoor blijft
       currentRouteCoordsForCheck = coords;
